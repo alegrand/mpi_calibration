@@ -7,12 +7,18 @@ import backoff
 
 
 class Job:
+    auto_oardel = True
+
     def __init__(self, jobid, connection=invoke, hide=True):
         self.jobid = jobid
         self.connection = connection
         self.hide = hide
 
     def __del__(self):
+        if self.auto_oardel:
+            self.oardel()
+
+    def oardel(self):
         self.connection.run('oardel %d' % self.jobid, hide=self.hide)
 
     @property
@@ -20,29 +26,30 @@ class Job:
         return '/var/lib/oar/%d' % self.jobid
 
     @backoff.on_exception(backoff.expo, FileNotFoundError)
-    def __find_nodes(self):
+    def __find_hostnames(self):
         try:
             filename = os.path.join('/', 'tmp', 'oarfile')
             self.connection.get(self.oar_node_file, filename)
         except AttributeError:
             filename = self.oar_node_file
-        nodes = set()
+        hostnames = set()
         with open(filename) as node_file:
             for line in node_file:
-                nodes.add(line.strip())
-        self.__nodes = list(sorted(nodes))
+                hostnames.add(line.strip())
+        self.__hostnames = list(sorted(hostnames))
 
     @property
-    def nodes(self):
+    def hostnames(self):
         try:
-            return list(self.__nodes)
+            return list(self.__hostnames)
         except AttributeError:
-            self.__find_nodes()
-            return list(self.__nodes)
+            self.__find_hostnames()
+            return list(self.__hostnames)
 
     @backoff.on_exception(backoff.expo, invoke.UnexpectedExit)
     def kadeploy(self, env='debian9-x64-min'):
         self.connection.run('kadeploy3 -k -f %s -e %s' % (self.oar_node_file, env), hide=self.hide)
+        return self
 
     def __repr__(self):
         return '%s(%d)' % (self.__class__.__name__, self.jobid)
@@ -61,6 +68,26 @@ class Job:
     def g5k_connection(cls, site, username):
         gateway = fabric.Connection('access.grid5000.fr', user=username)
         return fabric.Connection(site, user=username, gateway=gateway)
+
+    @property
+    def nodes(self):
+        try:
+            return self.__nodes
+        except AttributeError:
+            if self.connection is not invoke:  # FIXME
+                connections = [fabric.Connection(host, user='root', gateway=self.connection) for host in self.hostnames]
+            else:
+                connections = [fabric.Connection(host, user='root') for host in self.hostnames]
+            connections = fabric.ThreadingGroup.from_connections(connections)
+            connections.run('hostname', hide=self.hide)  # openning all the connections
+            self.__nodes = connections
+            return self.__nodes
+
+    def apt_install(self, packages):
+        self.nodes.run('apt update && apt upgrade -y', hide=self.hide)
+        cmd = 'apt install -y %s' % ' '.join(packages)
+        self.nodes.run(cmd, hide=self.hide)
+        return self
 
 
 #    cmd = 'oarsub -t deploy -l "{cluster in ('nova')}/nodes=1,walltime=4" -r "$(date '+%Y-%m-%d %H:%M:%S')"
