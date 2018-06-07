@@ -8,18 +8,18 @@ import backoff
 
 class Job:
     auto_oardel = False
+    hide = True
 
-    def __init__(self, jobid, connection, hide=True):
+    def __init__(self, jobid, connection):
         self.jobid = jobid
         self.connection = connection
-        self.hide = hide
 
     def __del__(self):
         if self.auto_oardel:
             self.oardel()
 
     def oardel(self):
-        self.connection.run('oardel %d' % self.jobid, hide=self.hide)
+        self.connection.run('oardel %d' % self.jobid, hide=self.hide, echo=True)
 
     @property
     def oar_node_file(self):
@@ -45,21 +45,21 @@ class Job:
 
     @backoff.on_exception(backoff.expo, invoke.UnexpectedExit)
     def kadeploy(self, env='debian9-x64-min'):
-        self.connection.run('kadeploy3 -k -f %s -e %s' % (self.oar_node_file, env), hide=self.hide)
+        self.connection.run('kadeploy3 -k -f %s -e %s' % (self.oar_node_file, env), hide=self.hide, echo=True)
         return self
 
     def __repr__(self):
         return '%s(%d)' % (self.__class__.__name__, self.jobid)
 
     @classmethod
-    def oarsub(cls, constraint, nb_nodes, walltime, connection, hide=True):
+    def oarsub(cls, constraint, nb_nodes, walltime, connection):
         date = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         constraint = '%s/nodes=%d,walltime=%d' % (constraint, nb_nodes, walltime)
         cmd = 'oarsub -t deploy -l "%s" -r "%s"' % (constraint, date)
-        result = connection.run(cmd, hide=hide)
+        result = connection.run(cmd, hide=cls.hide, echo=True)
         regex = re.compile('OAR_JOB_ID=(\d+)')
         jobid = int(regex.search(result.stdout).groups()[0])
-        return cls(jobid, connection=connection, hide=hide)
+        return cls(jobid, connection=connection)
 
     @classmethod
     def g5k_connection(cls, site, username):
@@ -73,14 +73,14 @@ class Job:
         except AttributeError:
             connections = [fabric.Connection(host, user='root', gateway=self.connection) for host in self.hostnames]
             connections = fabric.ThreadingGroup.from_connections(connections)
-            connections.run('hostname', hide=self.hide)  # openning all the connections
+            connections.run('hostname', hide=self.hide, echo=True)  # openning all the connections
             self.__nodes = connections
             return self.__nodes
 
     def apt_install(self, packages):
-        self.nodes.run('apt update && apt upgrade -y', hide=self.hide)
+        self.nodes.run('apt update && apt upgrade -y', hide=self.hide, echo=True)
         cmd = 'apt install -y %s' % ' '.join(packages)
-        self.nodes.run(cmd, hide=self.hide)
+        self.nodes.run(cmd, hide=self.hide, echo=True)
         return self
 
 
