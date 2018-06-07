@@ -7,9 +7,9 @@ import backoff
 
 
 class Job:
-    auto_oardel = True
+    auto_oardel = False
 
-    def __init__(self, jobid, connection=invoke, hide=True):
+    def __init__(self, jobid, connection, hide=True):
         self.jobid = jobid
         self.connection = connection
         self.hide = hide
@@ -27,11 +27,8 @@ class Job:
 
     @backoff.on_exception(backoff.expo, FileNotFoundError)
     def __find_hostnames(self):
-        try:
-            filename = os.path.join('/', 'tmp', 'oarfile')
-            self.connection.get(self.oar_node_file, filename)
-        except AttributeError:
-            filename = self.oar_node_file
+        filename = os.path.join('/', 'tmp', 'oarfile')
+        self.connection.get(self.oar_node_file, filename)
         hostnames = set()
         with open(filename) as node_file:
             for line in node_file:
@@ -55,7 +52,7 @@ class Job:
         return '%s(%d)' % (self.__class__.__name__, self.jobid)
 
     @classmethod
-    def oarsub(cls, constraint, nb_nodes, walltime, connection=invoke, hide=True):
+    def oarsub(cls, constraint, nb_nodes, walltime, connection, hide=True):
         date = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         constraint = '%s/nodes=%d,walltime=%d' % (constraint, nb_nodes, walltime)
         cmd = 'oarsub -t deploy -l "%s" -r "%s"' % (constraint, date)
@@ -74,10 +71,7 @@ class Job:
         try:
             return self.__nodes
         except AttributeError:
-            if self.connection is not invoke:  # FIXME
-                connections = [fabric.Connection(host, user='root', gateway=self.connection) for host in self.hostnames]
-            else:
-                connections = [fabric.Connection(host, user='root') for host in self.hostnames]
+            connections = [fabric.Connection(host, user='root', gateway=self.connection) for host in self.hostnames]
             connections = fabric.ThreadingGroup.from_connections(connections)
             connections.run('hostname', hide=self.hide)  # openning all the connections
             self.__nodes = connections
