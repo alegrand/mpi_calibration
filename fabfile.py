@@ -179,7 +179,7 @@ class Job:
 #    cmd = 'oarsub -t deploy -l "{cluster in ('nova')}/nodes=1,walltime=4" -r "$(date '+%Y-%m-%d %H:%M:%S')"
 
 def mpi_install(host1, host2, site, username):
-    job = Job.oarsub_hostnames(site, username, hostnames=[host1, host2], walltime=2)
+    job = Job.oarsub_hostnames(site, username, hostnames=[host1, host2], walltime=1)
     global FABFILE_JOB  # used for debug purpose, in case this functions terminates before the end.
     logger.info(str(job))
     time.sleep(5)
