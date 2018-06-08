@@ -4,11 +4,33 @@ import datetime
 import invoke
 import fabric
 import backoff
+import logging
+import colorlog
+
+handler = colorlog.StreamHandler()
+handler.setFormatter(colorlog.ColoredFormatter(
+    '%(log_color)s[%(asctime)s][%(levelname)s] - %(message)s'))
+formatter = colorlog.ColoredFormatter(
+    '%(log_color)s[%(asctime)s][%(levelname)s] %(message_log_color)s%(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    secondary_log_colors={
+        'message': {
+            'DEBGU': 'white',
+            'INFO': 'white',
+            'WARNING': 'white',
+            'ERROR': 'white',
+            'CRITICAL': 'white',
+        }
+    }
+)
+handler.setFormatter(formatter)
+logger = colorlog.getLogger(__name__)
+logger.addHandler(handler)
+logger.setLevel(logging.DEBUG)
 
 
 class Job:
     auto_oardel = False
-    hide = False
 
     def __init__(self, jobid, connection):
         self.jobid = jobid
@@ -18,8 +40,23 @@ class Job:
         if self.auto_oardel:
             self.oardel()
 
+    @staticmethod
+    def __generic_run(connection, title, command, **kwargs):
+        logger.info('[%s] %s' % (title, command))
+        return connection.run(command, hide=True, **kwargs)
+
+    def run_frontend(self, command, **kwargs):
+        return self.__generic_run(self.connection, 'frontend', command, **kwargs)
+
+    def run_nodes(self, command, **kwargs):
+        return self.__generic_run(self.nodes, 'nodes', command, **kwargs)
+
+    @classmethod
+    def run_node(cls, command, node, **kwargs):
+        return cls.__generic_run(node, node.host, command, **kwargs)
+
     def oardel(self):
-        self.connection.run('oardel %d' % self.jobid, hide=self.hide, echo=True)
+        self.run_frontend('oardel %d' % self.jobid)
 
     @property
     def oar_node_file(self):
@@ -46,7 +83,7 @@ class Job:
     @backoff.on_exception(backoff.expo, invoke.UnexpectedExit)
     def kadeploy(self, env='debian9-x64-min'):
         self.hostnames  # Wait for the oar_node_file to be available. Not required, just aesthetic.
-        self.connection.run('kadeploy3 -k -f %s -e %s' % (self.oar_node_file, env), hide=self.hide, echo=True)
+        self.run_frontend('kadeploy3 -k -f %s -e %s' % (self.oar_node_file, env))
         return self
 
     def __repr__(self):
@@ -57,7 +94,7 @@ class Job:
         date = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         constraint = '%s/nodes=%d,walltime=%d' % (constraint, nb_nodes, walltime)
         cmd = 'oarsub -t deploy -l "%s" -r "%s"' % (constraint, date)
-        result = connection.run(cmd, hide=cls.hide, echo=True)
+        result = cls.__generic_run(connection, 'frontend', cmd)
         regex = re.compile('OAR_JOB_ID=(\d+)')
         jobid = int(regex.search(result.stdout).groups()[0])
         return cls(jobid, connection=connection)
@@ -94,14 +131,14 @@ class Job:
         except AttributeError:
             connections = [fabric.Connection(host, user='root', gateway=self.connection) for host in self.hostnames]
             connections = fabric.ThreadingGroup.from_connections(connections)
-            connections.run('hostname', hide=self.hide, echo=True)  # openning all the connections
+            self.run_nodes('hostname')  # openning all the connections
             self.__nodes = connections
             return self.__nodes
 
     def apt_install(self, *packages):
-        self.nodes.run('apt update && apt upgrade -y', hide=self.hide, echo=True)
+        self.run_nodes('apt update && apt upgrade -y')
         cmd = 'apt install -y %s' % ' '.join(packages)
-        self.nodes.run(cmd, hide=self.hide, echo=True)
+        self.run_nodes(cmd)
         return self
 
 
@@ -123,8 +160,8 @@ def mpi_install(host1, host2, site, username):
         'libxml2',
         'libxml2-dev',
     )
-    job.nodes.run('git clone https://gitlab.inria.fr/simgrid/platform-calibration.git', hide=job.hide, echo=True)
-    job.nodes.run('cd platform-calibration/src/calibration && make', hide=job.hide, echo=True)
+    job.run_nodes('git clone https://gitlab.inria.fr/simgrid/platform-calibration.git')
+    job.run_nodes('cd platform-calibration/src/calibration && make')
     return job
 
 
