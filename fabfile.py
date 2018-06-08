@@ -3,7 +3,6 @@ import os
 import datetime
 import invoke
 import fabric
-import backoff
 import logging
 import colorlog
 import time
@@ -83,10 +82,17 @@ class Job:
     def oar_node_file(self):
         return '/var/lib/oar/%d' % self.jobid
 
-    @backoff.on_exception(backoff.expo, invoke.UnexpectedExit)
     def __find_hostnames(self):
         filename = os.path.join('/', 'tmp', 'oarfile')
-        self.run_frontend('test -f %s' % self.oar_node_file)
+        sleep_time = 1
+        while True:  # we wait for the job to be launched, i.e., the oarfile to exist
+            try:
+                self.run_frontend('test -f %s' % self.oar_node_file)
+            except invoke.UnexpectedExit:
+                time.sleep(sleep_time)
+                sleep_time = min(sleep_time*2, 60)
+            else:
+                break
         self.get_frontend(self.oar_node_file, filename)
         hostnames = set()
         with open(filename) as node_file:
@@ -102,7 +108,6 @@ class Job:
             self.__find_hostnames()
             return list(self.__hostnames)
 
-    @backoff.on_exception(backoff.expo, invoke.UnexpectedExit)
     def kadeploy(self, env='debian9-x64-min'):
         self.hostnames  # Wait for the oar_node_file to be available. Not required, just aesthetic.
         self.run_frontend('kadeploy3 -k -f %s -e %s' % (self.oar_node_file, env))
@@ -209,3 +214,10 @@ def run_calibration(job):
         logger.info('[%s] cd %s' % (origin.host, path))
         job.run_node(origin, 'mpirun --allow-run-as-root -np 2 -host %s ./calibrate -f examples/stampede.xml' % host)
         logger.info('[%s] cd ~' % origin.host)
+
+
+def mpi_calibration(host1, host2, site, username):
+    job = mpi_install(host1, host2, site, username)
+    send_key(job)
+    run_calibration(job)
+    return job

@@ -5,7 +5,6 @@ name = "pypi"
 
 [packages]
 fabric = "*"
-backoff = "*"
 colorlog = "*"
 
 [dev-packages]
