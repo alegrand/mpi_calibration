@@ -58,12 +58,16 @@ class Job:
         return cls.__generic_run(node, node.host, command, **kwargs)
 
     @classmethod
-    def put(cls, node, origin_file, target_file, **kwargs):
+    def put(cls, node, origin_file, target_file):
         logger.info('[%s] put: %s → %s' % (node.host, origin_file, target_file))
         node.put(origin_file, target_file)
 
+    def put_nodes(self, origin_file, target_file):
+        for node in self.nodes:
+            self.put(node, origin_file, target_file)
+
     @classmethod
-    def get(cls, node, origin_file, target_file, **kwargs):
+    def get(cls, node, origin_file, target_file):
         logger.info('[%s] get: %s → %s' % (node.host, origin_file, target_file))
         node.get(origin_file, target_file)
 
@@ -207,13 +211,42 @@ def send_key(job):
 
 
 def run_calibration(job):
+    def remove_g5k(hostname):
+        return hostname[:hostname.index('.')]
     origin = job.nodes[0]
+    target = job.nodes[1]
+    xml_content = '''<?xml version="1.0"?>
+        <config id="Config">
+        <!-- prefix name for the output files -->
+         <prefix value="exp"/>
+        <!-- directory name for the output files (as seen from calibrate.c) -->
+         <dirname value="exp"/>
+        <!-- Name of the file that contains all message sizes we can choose from. -->
+         <sizeFile value="zoo_sizes"/>
+        <!-- Minimum size of the messages to send-->
+         <minSize value="0"/>
+        <!-- Maximum size of the messages to send-->
+         <maxSize value="1000000"/>
+        <!-- Number of iterations per size of message-->
+         <iterations value="5"/>
+        </config>
+    '''
+    exp_filename = '/tmp/exp.xml'
+    with open(exp_filename, 'w') as exp_file:
+        exp_file.write(xml_content)
     path = '/root/platform-calibration/src/calibration'
+    node_exp_filename = 'exp.xml'
+    job.put_nodes(exp_filename, path + '/' + node_exp_filename)
+    job.run_nodes('mkdir -p %s' % (path + '/exp'))
     with origin.cd(path):
         host = ','.join([node.host for node in job.nodes])
         logger.info('[%s] cd %s' % (origin.host, path))
-        job.run_node(origin, 'mpirun --allow-run-as-root -np 2 -host %s ./calibrate -f examples/stampede.xml' % host)
+        job.run_node(origin, 'mpirun --allow-run-as-root -np 2 -host %s ./calibrate -f %s' % (host, node_exp_filename))
+        job.run_node(origin, 'zip -r exp.zip exp')
+        archive_name = '%s-%s_%s.zip' % (remove_g5k(origin.host), remove_g5k(target.host), datetime.date.today())
+        job.run_node(origin, 'mv exp.zip /root/%s' % archive_name)
         logger.info('[%s] cd ~' % origin.host)
+    job.get(origin, '/root/' + archive_name, archive_name)
 
 
 def mpi_calibration(host1, host2, site, username):
