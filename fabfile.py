@@ -197,3 +197,15 @@ def send_key(job):
     job.put(target, '/tmp/id_rsa.pub', '/tmp/id_rsa.pub')
     job.run_node(target, 'cat /tmp/id_rsa.pub >> ~/.ssh/authorized_keys')
     job.run_node(origin, 'ssh -o "StrictHostKeyChecking no" %s hostname' % target.host)
+    short_target = target.host[:target.host.find('.')]
+    job.run_node(origin, 'ssh -o "StrictHostKeyChecking no" %s hostname' % short_target)
+
+
+def run_calibration(job):
+    origin = job.nodes[0]
+    path = '/root/platform-calibration/src/calibration'
+    with origin.cd(path):
+        host = ','.join([node.host for node in job.nodes])
+        logger.info('[%s] cd %s' % (origin.host, path))
+        job.run_node(origin, 'mpirun --allow-run-as-root -np 2 -host %s ./calibrate -f examples/stampede.xml' % host)
+        logger.info('[%s] cd ~' % origin.host)
