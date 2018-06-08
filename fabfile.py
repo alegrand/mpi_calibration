@@ -6,6 +6,7 @@ import fabric
 import backoff
 import logging
 import colorlog
+import time
 
 handler = colorlog.StreamHandler()
 handler.setFormatter(colorlog.ColoredFormatter(
@@ -43,17 +44,37 @@ class Job:
     @staticmethod
     def __generic_run(connection, title, command, **kwargs):
         logger.info('[%s] %s' % (title, command))
-        return connection.run(command, hide=True, **kwargs)
+        if 'hide' not in kwargs:
+            kwargs['hide'] = True
+        return connection.run(command, **kwargs)
 
     def run_frontend(self, command, **kwargs):
         return self.__generic_run(self.connection, 'frontend', command, **kwargs)
 
     def run_nodes(self, command, **kwargs):
-        return self.__generic_run(self.nodes, 'nodes', command, **kwargs)
+        return self.__generic_run(self.nodes, 'allnodes', command, **kwargs)
 
     @classmethod
-    def run_node(cls, command, node, **kwargs):
+    def run_node(cls, node, command, **kwargs):
         return cls.__generic_run(node, node.host, command, **kwargs)
+
+    @classmethod
+    def put(cls, node, origin_file, target_file, **kwargs):
+        logger.info('[%s] put: %s → %s' % (node.host, origin_file, target_file))
+        node.put(origin_file, target_file)
+
+    @classmethod
+    def get(cls, node, origin_file, target_file, **kwargs):
+        logger.info('[%s] get: %s → %s' % (node.host, origin_file, target_file))
+        node.get(origin_file, target_file)
+
+    def put_frontend(self, origin_file, target_file, **kwargs):
+        logger.info('[frontend] put: %s → %s' % (origin_file, target_file))
+        self.connection.put(origin_file, target_file)
+
+    def get_frontend(self, origin_file, target_file, **kwargs):
+        logger.info('[frontend] get: %s → %s' % (origin_file, target_file))
+        self.connection.get(origin_file, target_file)
 
     def oardel(self):
         self.run_frontend('oardel %d' % self.jobid)
@@ -62,10 +83,11 @@ class Job:
     def oar_node_file(self):
         return '/var/lib/oar/%d' % self.jobid
 
-    @backoff.on_exception(backoff.expo, FileNotFoundError)
+    @backoff.on_exception(backoff.expo, invoke.UnexpectedExit)
     def __find_hostnames(self):
         filename = os.path.join('/', 'tmp', 'oarfile')
-        self.connection.get(self.oar_node_file, filename)
+        self.run_frontend('test -f %s' % self.oar_node_file)
+        self.get_frontend(self.oar_node_file, filename)
         hostnames = set()
         with open(filename) as node_file:
             for line in node_file:
@@ -131,8 +153,8 @@ class Job:
         except AttributeError:
             connections = [fabric.Connection(host, user='root', gateway=self.connection) for host in self.hostnames]
             connections = fabric.ThreadingGroup.from_connections(connections)
-            self.run_nodes('hostname')  # openning all the connections
             self.__nodes = connections
+            self.run_nodes('hostname')  # openning all the connections
             return self.__nodes
 
     def apt_install(self, *packages):
@@ -146,7 +168,9 @@ class Job:
 
 def mpi_install(host1, host2, site, username):
     job = Job.oarsub_hostnames(site, username, hostnames=[host1, host2], walltime=2)
-    print(job)
+    global FABFILE_JOB  # used for debug purpose, in case this functions terminates before the end.
+    logger.info(str(job))
+    time.sleep(5)
     job.kadeploy().apt_install(
         'build-essential',
         'python3',
@@ -168,8 +192,8 @@ def mpi_install(host1, host2, site, username):
 def send_key(job):
     origin = job.nodes[0]
     target = job.nodes[1]
-    origin.run('ssh-keygen -b 2048 -t rsa -f ~/.ssh/id_rsa -q -N ""', hide=job.hide, echo=True)
-    origin.get('/root/.ssh/id_rsa.pub', '/tmp/id_rsa.pub')
-    target.put('/tmp/id_rsa.pub', '/tmp/id_rsa.pub')
-    target.run('cat /tmp/id_rsa.pub >> ~/.ssh/authorized_keys', hide=job.hide, echo=True)
-    origin.run('ssh -o "StrictHostKeyChecking no" %s hostname' % target.host, hide=job.hide, echo=True)
+    job.run_node(origin, 'ssh-keygen -b 2048 -t rsa -f ~/.ssh/id_rsa -q -N ""')
+    job.get(origin, '/root/.ssh/id_rsa.pub', '/tmp/id_rsa.pub')
+    job.put(target, '/tmp/id_rsa.pub', '/tmp/id_rsa.pub')
+    job.run_node(target, 'cat /tmp/id_rsa.pub >> ~/.ssh/authorized_keys')
+    job.run_node(origin, 'ssh -o "StrictHostKeyChecking no" %s' % target.host)
