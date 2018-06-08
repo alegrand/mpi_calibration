@@ -176,12 +176,9 @@ class Job:
         return self
 
 
-#    cmd = 'oarsub -t deploy -l "{cluster in ('nova')}/nodes=1,walltime=4" -r "$(date '+%Y-%m-%d %H:%M:%S')"
-
-def mpi_install(host1, host2, site, username):
-    job = Job.oarsub_hostnames(site, username, hostnames=[host1, host2], walltime=1)
-    global FABFILE_JOB  # used for debug purpose, in case this functions terminates before the end.
+def mpi_install(job):
     logger.info(str(job))
+    logger.info('Nodes: %s and %s' % tuple(job.hostnames))
     time.sleep(5)
     job.kadeploy().apt_install(
         'build-essential',
@@ -252,8 +249,9 @@ def run_calibration(job):
     job.get(origin, '/root/' + archive_name, archive_name)
 
 
-def mpi_calibration(host1, host2, site, username):
-    job = mpi_install(host1, host2, site, username)
+def mpi_calibration(cluster, site, username):
+    job = Job.oarsub_cluster(site, username, clusters=[cluster], walltime=1, nb_nodes=2)
+    mpi_install(job)
     send_key(job)
     run_calibration(job)
     return job
@@ -261,5 +259,5 @@ def mpi_calibration(host1, host2, site, username):
 
 if __name__ == '__main__':
     if len(sys.argv) != 3:
-        sys.exit('Syntax: %s <host1> <host2>\n' % sys.argv[0])
-    mpi_calibration(sys.argv[1], sys.argv[2], 'lyon', 'tocornebize').oardel()
+        sys.exit('Syntax: %s <cluster> <site>\n' % sys.argv[0])
+    mpi_calibration(sys.argv[1], sys.argv[2], 'tocornebize').oardel()
