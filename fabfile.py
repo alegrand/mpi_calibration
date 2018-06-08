@@ -196,4 +196,4 @@ def send_key(job):
     job.get(origin, '/root/.ssh/id_rsa.pub', '/tmp/id_rsa.pub')
     job.put(target, '/tmp/id_rsa.pub', '/tmp/id_rsa.pub')
     job.run_node(target, 'cat /tmp/id_rsa.pub >> ~/.ssh/authorized_keys')
-    job.run_node(origin, 'ssh -o "StrictHostKeyChecking no" %s' % target.host)
+    job.run_node(origin, 'ssh -o "StrictHostKeyChecking no" %s hostname' % target.host)
