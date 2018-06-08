@@ -1,3 +1,5 @@
+#! /usr/bin/env python3
+
 import re
 import os
 import datetime
@@ -6,6 +8,7 @@ import fabric
 import logging
 import colorlog
 import time
+import sys
 
 handler = colorlog.StreamHandler()
 handler.setFormatter(colorlog.ColoredFormatter(
@@ -254,3 +257,9 @@ def mpi_calibration(host1, host2, site, username):
     send_key(job)
     run_calibration(job)
     return job
+
+
+if __name__ == '__main__':
+    if len(sys.argv) != 3:
+        sys.exit('Syntax: %s <host1> <host2>\n' % sys.argv[0])
+    mpi_calibration(sys.argv[1], sys.argv[2], 'lyon', 'tocornebize').oardel()
