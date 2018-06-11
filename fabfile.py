@@ -32,6 +32,17 @@ logger.addHandler(handler)
 logger.setLevel(logging.DEBUG)
 
 
+class Time:
+    def __init__(self, hours=None, minutes=None, seconds=None):
+        assert hours or minutes or seconds
+        self.hours = hours or 0
+        self.minutes = minutes or 0
+        self.seconds = seconds or 0
+
+    def __repr__(self):
+        return '%.2d:%.2d:%.2d' % (self.hours, self.minutes, self.seconds)
+
+
 class Job:
     auto_oardel = False
 
@@ -126,7 +137,7 @@ class Job:
     @classmethod
     def oarsub(cls, connection, constraint, walltime, nb_nodes):
         date = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        constraint = '%s/nodes=%d,walltime=%d' % (constraint, nb_nodes, walltime)
+        constraint = '%s/nodes=%d,walltime=%s' % (constraint, nb_nodes, walltime)
         cmd = 'oarsub -t deploy -l "%s" -r "%s"' % (constraint, date)
         result = cls.__generic_run(connection, 'frontend', cmd)
         regex = re.compile('OAR_JOB_ID=(\d+)')
@@ -250,7 +261,7 @@ def run_calibration(job):
 
 
 def mpi_calibration(cluster, site, username):
-    job = Job.oarsub_cluster(site, username, clusters=[cluster], walltime=1, nb_nodes=2)
+    job = Job.oarsub_cluster(site, username, clusters=[cluster], walltime=Time(minutes=15), nb_nodes=2)
     mpi_install(job)
     send_key(job)
     run_calibration(job)
