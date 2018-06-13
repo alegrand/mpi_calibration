@@ -6,15 +6,17 @@ name = "pypi"
 [packages]
 fabric = "*"
 colorlog = "*"
+"e1441f2" = {file = "https://github.com/Ezibenroc/pytree/releases/download/0.0.2/pytree-0.0.2-py3-none-any.whl"}
 
 [dev-packages]
 ipython = "*"
 jupyterlab = "*"
-"d0d3b99" = {file = "https://github.com/Ezibenroc/pytree/releases/download/0.0.1/pytree-0.0.1-py3-none-any.whl"}
 graphviz = "*"
 matplotlib = "*"
 altair = "*"
 pandas = "*"
+vega-datasets = "*"
+scipy = "*"
 
 [requires]
 python_version = "3.6"
