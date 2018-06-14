@@ -9,6 +9,7 @@ import logging
 import colorlog
 import time
 import sys
+import socket
 
 handler = colorlog.StreamHandler()
 handler.setFormatter(colorlog.ColoredFormatter(
@@ -55,10 +56,12 @@ class Job:
             self.oardel()
 
     @staticmethod
-    def __generic_run(connection, title, command, **kwargs):
+    def __generic_run(connection, title, command, hide_output=True, **kwargs):
         logger.info('[%s] %s' % (title, command))
         if 'hide' not in kwargs:
             kwargs['hide'] = True
+        if hide_output:
+            command = '%s &> /dev/null' % command
         return connection.run(command, **kwargs)
 
     def run_frontend(self, command, **kwargs):
@@ -139,7 +142,7 @@ class Job:
         date = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         constraint = '%s/nodes=%d,walltime=%s' % (constraint, nb_nodes, walltime)
         cmd = 'oarsub -t deploy -l "%s" -r "%s"' % (constraint, date)
-        result = cls.__generic_run(connection, 'frontend', cmd)
+        result = cls.__generic_run(connection, 'frontend', cmd, hide_output=False)
         regex = re.compile('OAR_JOB_ID=(\d+)')
         jobid = int(regex.search(result.stdout).groups()[0])
         return cls(jobid, connection=connection)
@@ -166,8 +169,11 @@ class Job:
 
     @classmethod
     def g5k_connection(cls, site, username):
-        gateway = fabric.Connection('access.grid5000.fr', user=username)
-        return fabric.Connection(site, user=username, gateway=gateway)
+        if 'grid5000' in socket.getfqdn():  # already inside G5K, no need for a gateway
+            return fabric.Connection(site, user=username)
+        else:
+            gateway = fabric.Connection('access.grid5000.fr', user=username)
+            return fabric.Connection(site, user=username, gateway=gateway)
 
     @property
     def nodes(self):
