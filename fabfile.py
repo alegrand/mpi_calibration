@@ -278,3 +278,11 @@ if __name__ == '__main__':
     if len(sys.argv) != 3:
         sys.exit('Syntax: %s <cluster> <site>\n' % sys.argv[0])
     mpi_calibration(sys.argv[1], sys.argv[2], 'tocornebize').oardel()
+
+# TODO
+# Call the script with:
+#   - <site> <cluster>
+#   - <site> <node1> <node2>
+#   - <site> <jobid>
+# Call the script from the laptop or a frontend.
+# Then, do another script that copy this script and do a 'oarsub "python fabfile.py jobid"'.
