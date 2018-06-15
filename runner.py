@@ -15,7 +15,10 @@ def run_all(username, site, cluster, possible_node_id, nb_runs=None):
     choices = random.sample(combinations, nb_runs)
     failure_count = 0
     node_failure_count = collections.Counter()
+    node_tentative_count = collections.Counter()
     for i, (node1, node2) in enumerate(choices):
+        node_tentative_count[node1] += 1
+        node_tentative_count[node2] += 1
         try:
             job = fabfile.Job.oarsub_hostnames(
                 site='lyon',
@@ -33,7 +36,10 @@ def run_all(username, site, cluster, possible_node_id, nb_runs=None):
     fabfile.logger.warning('oarsub failed %d times' % failure_count)
     fabfile.logger.warning('failure count per node:')
     for node, nb_failures in sorted(node_failure_count.items()):
-        fabfile.logger.warning('    node %s failed %d times' % (node, nb_failures))
+        fabfile.logger.warning('    node %s failed %d/%d times' % (node, nb_failures, node_tentative_count[node]))
+    for node, nb_failures in sorted(node_failure_count.items()):
+        if nb_failures == node_tentative_count[node]:
+            fabfile.logger.error('Node %s failed every time, consider removing it from your test.' % node)
 
 
-run_all('tocornebize', 'lyon', 'nova', range(8))
+run_all('tocornebize', 'lyon', 'nova', range(1, 8))
