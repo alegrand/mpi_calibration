@@ -10,6 +10,7 @@ import colorlog
 import time
 import sys
 import socket
+import argparse
 
 handler = colorlog.StreamHandler()
 handler.setFormatter(colorlog.ColoredFormatter(
@@ -266,18 +267,48 @@ def run_calibration(job):
     job.get(origin, '/root/' + archive_name, archive_name)
 
 
-def mpi_calibration(cluster, site, username):
-    job = Job.oarsub_cluster(site, username, clusters=[cluster], walltime=Time(minutes=15), nb_nodes=2)
+def mpi_calibration(job):
     mpi_install(job)
     send_key(job)
     run_calibration(job)
     return job
 
 
+def get_job(args, nb_nodes=2, check_nb_nodes=False):
+    user = args.username
+    site = args.site
+    if hasattr(args, 'cluster'):
+        job = Job.oarsub_cluster(site, user, clusters=[args.cluster], walltime=Time(minutes=15), nb_nodes=2)
+    elif hasattr(args, 'nodes'):
+        job = Job.oarsub_hostnames(site, user, hostnames=args.nodes, walltime=Time(minutes=15))
+    else:
+        connection = Job.g5k_connection(site, user)
+        job = Job(args.jobid, connection)
+    if check_nb_nodes:
+        if len(job.hostnames) != 2:
+            logger.error('Wrong number of nodes for job: got %d, expected 2.' % len(job.hostnames))
+            job.oardel()
+            sys.exit()
+    return job
+
+
 if __name__ == '__main__':
-    if len(sys.argv) != 3:
-        sys.exit('Syntax: %s <cluster> <site>\n' % sys.argv[0])
-    mpi_calibration(sys.argv[1], sys.argv[2], 'tocornebize').oardel()
+    parser = argparse.ArgumentParser(
+        description='Automatic MPI calibration')
+    parser.add_argument('site', choices=['lyon', 'rennes', 'nancy'],
+                        help='Site for the experiment.')
+    parser.add_argument('username', type=str,
+                        help='Username to use for the experiment.')
+    sp = parser.add_subparsers()
+    sp_cluster = sp.add_parser('cluster', help='Cluster for the experiment.')
+    sp_cluster.add_argument('cluster', type=str)
+    sp_nodes = sp.add_parser('nodes', help='Nodes for the experiment.')
+    sp_nodes.add_argument('nodes', type=str, nargs=2)
+    sp_jobid = sp.add_parser('jobid', help='Job ID for the experiment.')
+    sp_jobid.add_argument('jobid', type=int)
+    args = parser.parse_args()
+    job = get_job(args, check_nb_nodes=True)
+    mpi_calibration(job)
 
 # TODO
 # Call the script with:
