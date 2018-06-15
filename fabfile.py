@@ -1,7 +1,6 @@
 #! /usr/bin/env python3
 
 import re
-import os
 import datetime
 import invoke
 import fabric
@@ -21,7 +20,7 @@ formatter = colorlog.ColoredFormatter(
     datefmt='%Y-%m-%d %H:%M:%S',
     secondary_log_colors={
         'message': {
-            'DEBGU': 'white',
+            'DEBUG': 'white',
             'INFO': 'white',
             'WARNING': 'white',
             'ERROR': 'white',
@@ -78,7 +77,8 @@ class Job:
 
     @classmethod
     def put(cls, node, origin_file, target_file):
-        logger.info('[%s] put: %s → %s' % (node.host, origin_file, target_file))
+        logger.info('[%s] put: %s → %s' %
+                    (node.host, origin_file, target_file))
         node.put(origin_file, target_file)
 
     def put_nodes(self, origin_file, target_file):
@@ -87,7 +87,8 @@ class Job:
 
     @classmethod
     def get(cls, node, origin_file, target_file):
-        logger.info('[%s] get: %s → %s' % (node.host, origin_file, target_file))
+        logger.info('[%s] get: %s → %s' %
+                    (node.host, origin_file, target_file))
         node.get(origin_file, target_file)
 
     def put_frontend(self, origin_file, target_file, **kwargs):
@@ -133,8 +134,10 @@ class Job:
             return list(self.__hostnames)
 
     def kadeploy(self, env='debian9-x64-min'):
-        self.hostnames  # Wait for the oar_node_file to be available. Not required, just aesthetic.
-        self.run_frontend('kadeploy3 -k -f %s -e %s' % (self.oar_node_file, env))
+        # Wait for the oar_node_file to be available. Not required, just aesthetic.
+        self.hostnames
+        self.run_frontend('kadeploy3 -k -f %s -e %s' %
+                          (self.oar_node_file, env))
         return self
 
     def __repr__(self):
@@ -143,14 +146,16 @@ class Job:
     @classmethod
     def oarsub(cls, connection, constraint, walltime, nb_nodes, immediate=True, script=None):
         date = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        constraint = '%s/nodes=%d,walltime=%s' % (constraint, nb_nodes, walltime)
+        constraint = '%s/nodes=%d,walltime=%s' % (
+            constraint, nb_nodes, walltime)
         cmd = 'oarsub -t deploy -l "%s"' % constraint
         if immediate:
             cmd += ' -r "%s"' % date
         if script:
             assert not immediate
             cmd += " '%s'" % script
-        result = cls.__generic_run(connection, 'frontend', cmd, hide_output=False)
+        result = cls.__generic_run(
+            connection, 'frontend', cmd, hide_output=False)
         regex = re.compile('OAR_JOB_ID=(\d+)')
         jobid = int(regex.search(result.stdout).groups()[0])
         return cls(jobid, connection=connection)
@@ -188,7 +193,8 @@ class Job:
         try:
             return self.__nodes
         except AttributeError:
-            connections = [fabric.Connection(host, user='root', gateway=self.connection) for host in self.hostnames]
+            connections = [fabric.Connection(
+                host, user='root', gateway=self.connection) for host in self.hostnames]
             connections = fabric.ThreadingGroup.from_connections(connections)
             self.__nodes = connections
             self.run_nodes('hostname')  # openning all the connections
@@ -218,7 +224,8 @@ def mpi_install(job):
         'libxml2',
         'libxml2-dev',
     )
-    job.run_nodes('git clone https://gitlab.inria.fr/simgrid/platform-calibration.git')
+    job.run_nodes(
+        'git clone https://gitlab.inria.fr/simgrid/platform-calibration.git')
     job.run_nodes('cd platform-calibration/src/calibration && make')
     return job
 
@@ -231,10 +238,13 @@ def send_key(job):
     job.get(origin, '/root/.ssh/id_rsa.pub', tmp_file.name)
     job.put(target, tmp_file.name, '/tmp/id_rsa.pub')
     tmp_file.close()
-    job.run_node(target, 'cat /tmp/id_rsa.pub >> ~/.ssh/authorized_keys', hide_output=False)
-    job.run_node(origin, 'ssh -o "StrictHostKeyChecking no" %s hostname' % target.host)
+    job.run_node(
+        target, 'cat /tmp/id_rsa.pub >> ~/.ssh/authorized_keys', hide_output=False)
+    job.run_node(
+        origin, 'ssh -o "StrictHostKeyChecking no" %s hostname' % target.host)
     short_target = target.host[:target.host.find('.')]
-    job.run_node(origin, 'ssh -o "StrictHostKeyChecking no" %s hostname' % short_target)
+    job.run_node(
+        origin, 'ssh -o "StrictHostKeyChecking no" %s hostname' % short_target)
 
 
 def run_calibration(job):
@@ -269,9 +279,11 @@ def run_calibration(job):
     with origin.cd(path):
         host = ','.join([node.host for node in job.nodes])
         logger.info('[%s] cd %s' % (origin.host, path))
-        job.run_node(origin, 'mpirun --allow-run-as-root -np 2 -host %s ./calibrate -f %s' % (host, node_exp_filename))
+        job.run_node(origin, 'mpirun --allow-run-as-root -np 2 -host %s ./calibrate -f %s' %
+                     (host, node_exp_filename))
         job.run_node(origin, 'zip -r exp.zip exp')
-        archive_name = '%s-%s_%s.zip' % (remove_g5k(origin.host), remove_g5k(target.host), datetime.date.today())
+        archive_name = '%s-%s_%s_%d.zip' % (remove_g5k(origin.host), remove_g5k(target.host), datetime.date.today(),
+                                            job.jobid)
         job.run_node(origin, 'mv exp.zip /root/%s' % archive_name)
         logger.info('[%s] cd ~' % origin.host)
     job.get(origin, '/root/' + archive_name, archive_name)
@@ -288,15 +300,18 @@ def get_job(args, nb_nodes=2, check_nb_nodes=False):
     user = args.username
     site = args.site
     if hasattr(args, 'cluster'):
-        job = Job.oarsub_cluster(site, user, clusters=[args.cluster], walltime=Time(minutes=15), nb_nodes=2)
+        job = Job.oarsub_cluster(site, user, clusters=[
+                                 args.cluster], walltime=Time(minutes=15), nb_nodes=2)
     elif hasattr(args, 'nodes'):
-        job = Job.oarsub_hostnames(site, user, hostnames=args.nodes, walltime=Time(minutes=15))
+        job = Job.oarsub_hostnames(
+            site, user, hostnames=args.nodes, walltime=Time(minutes=15))
     else:
         connection = Job.g5k_connection(site, user)
         job = Job(args.jobid, connection)
     if check_nb_nodes:
         if len(job.hostnames) != 2:
-            logger.error('Wrong number of nodes for job: got %d, expected 2.' % len(job.hostnames))
+            logger.error(
+                'Wrong number of nodes for job: got %d, expected 2.' % len(job.hostnames))
             job.oardel()
             sys.exit()
     return job
