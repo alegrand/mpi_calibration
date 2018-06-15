@@ -106,7 +106,7 @@ class Job:
         return '/var/lib/oar/%d' % self.jobid
 
     def __find_hostnames(self):
-        filename = os.path.join('/', 'tmp', 'oarfile')
+        tmp_file = tempfile.NamedTemporaryFile(dir='.')
         sleep_time = 1
         while True:  # we wait for the job to be launched, i.e., the oarfile to exist
             try:
@@ -116,11 +116,12 @@ class Job:
                 sleep_time = min(sleep_time*2, 60)
             else:
                 break
-        self.get_frontend(self.oar_node_file, filename)
+        self.get_frontend(self.oar_node_file, tmp_file.name)
         hostnames = set()
-        with open(filename) as node_file:
+        with open(tmp_file.name) as node_file:
             for line in node_file:
                 hostnames.add(line.strip())
+        tmp_file.close()
         self.__hostnames = list(sorted(hostnames))
 
     @property
