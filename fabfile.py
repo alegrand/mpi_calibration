@@ -10,6 +10,7 @@ import colorlog
 import time
 import sys
 import socket
+import tempfile
 import argparse
 
 handler = colorlog.StreamHandler()
@@ -220,8 +221,10 @@ def send_key(job):
     origin = job.nodes[0]
     target = job.nodes[1]
     job.run_node(origin, 'ssh-keygen -b 2048 -t rsa -f ~/.ssh/id_rsa -q -N ""')
-    job.get(origin, '/root/.ssh/id_rsa.pub', '/tmp/id_rsa.pub')
-    job.put(target, '/tmp/id_rsa.pub', '/tmp/id_rsa.pub')
+    tmp_file = tempfile.NamedTemporaryFile(dir='.')
+    job.get(origin, '/root/.ssh/id_rsa.pub', tmp_file.name)
+    job.put(target, tmp_file.name, '/tmp/id_rsa.pub')
+    tmp_file.close()
     job.run_node(target, 'cat /tmp/id_rsa.pub >> ~/.ssh/authorized_keys')
     job.run_node(origin, 'ssh -o "StrictHostKeyChecking no" %s hostname' % target.host)
     short_target = target.host[:target.host.find('.')]
@@ -249,12 +252,13 @@ def run_calibration(job):
          <iterations value="5"/>
         </config>
     '''
-    exp_filename = '/tmp/exp.xml'
-    with open(exp_filename, 'w') as exp_file:
+    tmp_file = tempfile.NamedTemporaryFile(dir='.')
+    with open(tmp_file.name, 'w') as exp_file:
         exp_file.write(xml_content)
     path = '/root/platform-calibration/src/calibration'
     node_exp_filename = 'exp.xml'
-    job.put_nodes(exp_filename, path + '/' + node_exp_filename)
+    job.put_nodes(tmp_file.name, path + '/' + node_exp_filename)
+    tmp_file.close()
     job.run_nodes('mkdir -p %s' % (path + '/exp'))
     with origin.cd(path):
         host = ','.join([node.host for node in job.nodes])
