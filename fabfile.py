@@ -141,24 +141,29 @@ class Job:
         return '%s(%d)' % (self.__class__.__name__, self.jobid)
 
     @classmethod
-    def oarsub(cls, connection, constraint, walltime, nb_nodes):
+    def oarsub(cls, connection, constraint, walltime, nb_nodes, immediate=True, script=None):
         date = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         constraint = '%s/nodes=%d,walltime=%s' % (constraint, nb_nodes, walltime)
-        cmd = 'oarsub -t deploy -l "%s" -r "%s"' % (constraint, date)
+        cmd = 'oarsub -t deploy -l "%s"' % constraint
+        if immediate:
+            cmd += ' -r "%s"' % date
+        if script:
+            assert not immediate
+            cmd += " '%s'" % script
         result = cls.__generic_run(connection, 'frontend', cmd, hide_output=False)
         regex = re.compile('OAR_JOB_ID=(\d+)')
         jobid = int(regex.search(result.stdout).groups()[0])
         return cls(jobid, connection=connection)
 
     @classmethod
-    def oarsub_cluster(cls, site, username, clusters, walltime, nb_nodes):
+    def oarsub_cluster(cls, site, username, clusters, walltime, nb_nodes, immediate=True, script=None):
         connection = cls.g5k_connection(site, username)
         clusters = ["'%s'" % clus for clus in clusters]
         constraint = "{cluster in (%s)}" % ', '.join(clusters)
-        return cls.oarsub(connection, constraint, walltime, nb_nodes)
+        return cls.oarsub(connection, constraint, walltime, nb_nodes, immediate=immediate, script=script)
 
     @classmethod
-    def oarsub_hostnames(cls, site, username, hostnames, walltime, nb_nodes=None):
+    def oarsub_hostnames(cls, site, username, hostnames, walltime, nb_nodes=None, immediate=True, script=None):
         def expandg5k(host, site):
             if 'grid5000' not in host:
                 host = '%s.%s.grid5000.fr' % (host, site)
@@ -168,7 +173,7 @@ class Job:
         constraint = "{network_address in (%s)}" % ', '.join(hostnames)
         if nb_nodes is None:
             nb_nodes = len(hostnames)
-        return cls.oarsub(connection, constraint, walltime, nb_nodes)
+        return cls.oarsub(connection, constraint, walltime, nb_nodes, immediate=immediate, script=script)
 
     @classmethod
     def g5k_connection(cls, site, username):
