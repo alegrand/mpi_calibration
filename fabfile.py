@@ -225,7 +225,7 @@ def send_key(job):
     job.get(origin, '/root/.ssh/id_rsa.pub', tmp_file.name)
     job.put(target, tmp_file.name, '/tmp/id_rsa.pub')
     tmp_file.close()
-    job.run_node(target, 'cat /tmp/id_rsa.pub >> ~/.ssh/authorized_keys')
+    job.run_node(target, 'cat /tmp/id_rsa.pub >> ~/.ssh/authorized_keys', hide_output=False)
     job.run_node(origin, 'ssh -o "StrictHostKeyChecking no" %s hostname' % target.host)
     short_target = target.host[:target.host.find('.')]
     job.run_node(origin, 'ssh -o "StrictHostKeyChecking no" %s hostname' % short_target)
