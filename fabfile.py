@@ -11,10 +11,11 @@ import sys
 import socket
 import tempfile
 import argparse
+import zipfile
+import yaml
+import io
 
 handler = colorlog.StreamHandler()
-handler.setFormatter(colorlog.ColoredFormatter(
-    '%(log_color)s[%(asctime)s][%(levelname)s] - %(message)s'))
 formatter = colorlog.ColoredFormatter(
     '%(log_color)s[%(asctime)s][%(levelname)s] %(message_log_color)s%(message)s',
     datefmt='%Y-%m-%d %H:%M:%S',
@@ -30,7 +31,11 @@ formatter = colorlog.ColoredFormatter(
 )
 handler.setFormatter(formatter)
 logger = colorlog.getLogger(__name__)
+log_stream = io.StringIO()
+io_handler = logging.StreamHandler(log_stream)
+io_handler.setFormatter(logging.Formatter('[%(asctime)s][%(levelname)s] %(message)s'))
 logger.addHandler(handler)
+logger.addHandler(io_handler)
 logger.setLevel(logging.DEBUG)
 
 
@@ -206,6 +211,29 @@ class Job:
         self.run_nodes(cmd)
         return self
 
+    def __add_raw_information(self, archive_name, filename, setup_command=None):
+        if setup_command:
+            self.run_nodes(setup_command, hide_output=False)
+        pass  # TODO
+ #       commands_with_files = {
+ #                   'cpuinfo.txt': 'cat /proc/cpuinfo',
+ #                   'environment.txt': 'env',
+ #                   'lstopo.xml': 'lstopo tmp.xml && cat tmp.xml',
+ #                   }
+
+    def platform_information(self):
+        commands = {'kernel': 'uname -r',
+                    'gcc': 'gcc -dumpversion',
+                    'mpi': 'mpirun --version | head -n 1',
+                    'cpu': 'cat /proc/cpuinfo  | grep "name"| uniq | cut -d: -f2 ',
+                    }
+        result = {host: {} for host in self.hostnames}
+        for cmd_name, cmd in commands.items():
+            output = self.run_nodes(cmd, hide_output=False)
+            for host, res in output.items():
+                result[host.host][cmd_name] = res.stdout.strip()
+        return result
+
 
 def mpi_install(job):
     logger.info(str(job))
@@ -223,6 +251,7 @@ def mpi_install(job):
         'openmpi-bin',
         'libxml2',
         'libxml2-dev',
+        'hwloc',
     )
     job.run_nodes(
         'git clone https://gitlab.inria.fr/simgrid/platform-calibration.git')
@@ -279,14 +308,29 @@ def run_calibration(job):
     with origin.cd(path):
         host = ','.join([node.host for node in job.nodes])
         logger.info('[%s] cd %s' % (origin.host, path))
+        start_date = datetime.datetime.now()
         job.run_node(origin, 'mpirun --allow-run-as-root -np 2 -host %s ./calibrate -f %s' %
                      (host, node_exp_filename))
+        end_date = datetime.datetime.now()
         job.run_node(origin, 'zip -r exp.zip exp')
         archive_name = '%s-%s_%s_%d.zip' % (remove_g5k(origin.host), remove_g5k(target.host), datetime.date.today(),
                                             job.jobid)
         job.run_node(origin, 'mv exp.zip /root/%s' % archive_name)
         logger.info('[%s] cd ~' % origin.host)
     job.get(origin, '/root/' + archive_name, archive_name)
+    tmp_file = tempfile.NamedTemporaryFile(dir='.')
+    job_info = job.platform_information()
+    job_info['start'] = start_date.isoformat()
+    job_info['stop'] = end_date.isoformat()
+    with open(tmp_file.name, 'w') as f:
+        yaml.dump(job_info, f, default_flow_style=False)
+    archive = zipfile.ZipFile(archive_name, 'a')
+    archive.write(tmp_file.name, 'info.yaml')
+    with open(tmp_file.name, 'w') as f:
+        f.write(log_stream.getvalue())
+    archive.write(tmp_file.name, 'commands.log')
+    archive.close()
+    tmp_file.close()
 
 
 def mpi_calibration(job):

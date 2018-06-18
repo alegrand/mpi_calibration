@@ -7,6 +7,7 @@ name = "pypi"
 fabric = "*"
 colorlog = "*"
 "e1441f2" = {file = "https://github.com/Ezibenroc/pytree/releases/download/0.0.2/pytree-0.0.2-py3-none-any.whl"}
+pyyaml = "*"
 
 [dev-packages]
 ipython = "*"
