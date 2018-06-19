@@ -21,12 +21,12 @@ def run_all(username, site, cluster, possible_node_id, nb_runs=None):
         node_tentative_count[node2] += 1
         try:
             job = fabfile.Job.oarsub_hostnames(
-                site='lyon',
+                site='rennes',
                 username='tocornebize',
                 hostnames=[node1, node2],
                 walltime=fabfile.Time(minutes=15),
                 immediate=False,
-                script='python3 fabfile.py lyon tocornebize jobid $OAR_JOB_ID')
+                script='python3 fabfile.py rennes tocornebize jobid $OAR_JOB_ID')
             fabfile.logger.info('[%3d/%3d]\t %s: %s and %s' % (i+1, nb_runs, job, node1, node2))
         except invoke.exceptions.UnexpectedExit:
             fabfile.logger.warning('oarsub failed for nodes %s and %s' % (node1, node2))
@@ -42,4 +42,4 @@ def run_all(username, site, cluster, possible_node_id, nb_runs=None):
             fabfile.logger.error('Node %s failed every time, consider removing it from your test.' % node)
 
 
-run_all('tocornebize', 'lyon', 'nova', range(1, 8))
+run_all('tocornebize', 'rennes', 'paravance', range(1, 73), 30)
