@@ -250,6 +250,9 @@ class Job:
                 result[host.host][cmd_name] = res.stdout.strip()
             if len(set([result[h][cmd_name] for h in self.hostnames])) != 1:
                 logger.warning('Different settings found for %s (command %s)' % (cmd_name, cmd))
+        result['site'] = self.connection.host
+        result['jobid'] = self.jobid
+        result['command'] = ' '.join(sys.argv)
         return result
 
 
