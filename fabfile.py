@@ -211,18 +211,34 @@ class Job:
         self.run_nodes(cmd)
         return self
 
-    def __add_raw_information(self, archive_name, filename, setup_command=None):
-        if setup_command:
-            self.run_nodes(setup_command, hide_output=False)
-        pass  # TODO
- #       commands_with_files = {
- #                   'cpuinfo.txt': 'cat /proc/cpuinfo',
- #                   'environment.txt': 'env',
- #                   'lstopo.xml': 'lstopo tmp.xml && cat tmp.xml',
- #                   }
+    def __add_raw_information(self, archive_name, filename, command):
+        self.run_nodes(command, hide_output=False)
+        origin = self.nodes[0]
+        self.run_node(origin, 'cp %s information/%s' % (filename, origin.host))
+        for host in self.hostnames:
+            if host == origin.host:
+                continue
+            self.run_node(origin, 'scp %s:/root/%s information/%s' % (host, filename, host))
+
+    def add_raw_information(self, archive_name):
+        origin = self.nodes[0]
+        for host in self.hostnames:
+            self.run_node(origin, 'mkdir -p information/%s' % host)
+        commands_with_files = {
+                    'cpuinfo.txt': 'cp /proc/cpuinfo cpuinfo.txt',
+                    'environment.txt': 'env > environment.txt',
+                    'topology.xml': 'lstopo topology.xml',
+                    'topology.pdf': 'lstopo topology.pdf',
+                    'lspci.txt': 'lspci -v > lspci.txt'
+                    }
+        for filename, command in commands_with_files.items():
+            self.__add_raw_information(archive_name, filename, command)
+        self.run_node(origin, 'zip -ru %s information' % archive_name)
+        self.run_node(origin, 'rm -rf information')
 
     def platform_information(self):
         commands = {'kernel': 'uname -r',
+                    'version': 'cat /proc/version',
                     'gcc': 'gcc -dumpversion',
                     'mpi': 'mpirun --version | head -n 1',
                     'cpu': 'cat /proc/cpuinfo  | grep "name"| uniq | cut -d: -f2 ',
@@ -232,6 +248,8 @@ class Job:
             output = self.run_nodes(cmd, hide_output=False)
             for host, res in output.items():
                 result[host.host][cmd_name] = res.stdout.strip()
+            if len(set([result[h][cmd_name] for h in self.hostnames])) != 1:
+                logger.warning('Different settings found for %s (command %s)' % (cmd_name, cmd))
         return result
 
 
@@ -252,6 +270,7 @@ def mpi_install(job):
         'libxml2',
         'libxml2-dev',
         'hwloc',
+        'pciutils'
     )
     job.run_nodes(
         'git clone https://gitlab.inria.fr/simgrid/platform-calibration.git')
@@ -317,6 +336,7 @@ def run_calibration(job):
                                             job.jobid)
         job.run_node(origin, 'mv exp.zip /root/%s' % archive_name)
         logger.info('[%s] cd ~' % origin.host)
+    job.add_raw_information(archive_name)
     job.get(origin, '/root/' + archive_name, archive_name)
     tmp_file = tempfile.NamedTemporaryFile(dir='.')
     job_info = job.platform_information()
