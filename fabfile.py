@@ -350,7 +350,9 @@ def run_calibration(job):
     archive = zipfile.ZipFile(archive_name, 'a')
     archive.write(tmp_file.name, 'info.yaml')
     with open(tmp_file.name, 'w') as f:
-        f.write(log_stream.getvalue())
+        log = log_stream.getvalue()
+        log = log.encode('ascii', 'ignore').decode()  # removing any non-ascii character
+        f.write(log)
     archive.write(tmp_file.name, 'commands.log')
     archive.close()
     tmp_file.close()
