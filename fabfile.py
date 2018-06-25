@@ -218,7 +218,7 @@ class Job:
         for host in self.hostnames:
             if host == origin.host:
                 continue
-            self.run_node(origin, 'scp %s:/root/%s information/%s' % (host, filename, host))
+            self.run_node(origin, 'scp %s:%s information/%s' % (host, filename, host))
 
     def add_raw_information(self, archive_name):
         origin = self.nodes[0]
@@ -284,13 +284,13 @@ def mpi_install(job):
 def send_key(job):
     origin = job.nodes[0]
     target = job.nodes[1]
-    job.run_node(origin, 'ssh-keygen -b 2048 -t rsa -f ~/.ssh/id_rsa -q -N ""')
+    job.run_node(origin, 'ssh-keygen -b 2048 -t rsa -f .ssh/id_rsa -q -N ""')
     tmp_file = tempfile.NamedTemporaryFile(dir='.')
-    job.get(origin, '/root/.ssh/id_rsa.pub', tmp_file.name)
+    job.get(origin, '.ssh/id_rsa.pub', tmp_file.name)
     job.put(target, tmp_file.name, '/tmp/id_rsa.pub')
     tmp_file.close()
     job.run_node(
-        target, 'cat /tmp/id_rsa.pub >> ~/.ssh/authorized_keys', hide_output=False)
+        target, 'cat /tmp/id_rsa.pub >> .ssh/authorized_keys', hide_output=False)
     job.run_node(
         origin, 'ssh -o "StrictHostKeyChecking no" %s hostname' % target.host)
     short_target = target.host[:target.host.find('.')]
@@ -322,7 +322,7 @@ def run_calibration(job):
     tmp_file = tempfile.NamedTemporaryFile(dir='.')
     with open(tmp_file.name, 'w') as exp_file:
         exp_file.write(xml_content)
-    path = '/root/platform-calibration/src/calibration'
+    path = 'platform-calibration/src/calibration'
     node_exp_filename = 'exp.xml'
     job.put_nodes(tmp_file.name, path + '/' + node_exp_filename)
     tmp_file.close()
@@ -337,10 +337,10 @@ def run_calibration(job):
         job.run_node(origin, 'zip -r exp.zip exp')
         archive_name = '%s-%s_%s_%d.zip' % (remove_g5k(origin.host), remove_g5k(target.host), datetime.date.today(),
                                             job.jobid)
-        job.run_node(origin, 'mv exp.zip /root/%s' % archive_name)
+        job.run_node(origin, 'mv exp.zip ~/%s' % archive_name)
         logger.info('[%s] cd ~' % origin.host)
     job.add_raw_information(archive_name)
-    job.get(origin, '/root/' + archive_name, archive_name)
+    job.get(origin, archive_name, archive_name)
     tmp_file = tempfile.NamedTemporaryFile(dir='.')
     job_info = job.platform_information()
     job_info['start'] = start_date.isoformat()
