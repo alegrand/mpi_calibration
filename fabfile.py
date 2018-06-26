@@ -201,6 +201,17 @@ class Job:
             gateway = fabric.Connection('access.grid5000.fr', user=username)
             return fabric.Connection(site, user=username, gateway=gateway)
 
+    def __open_nodes_connection(self):
+        sleep_time = 5
+        while True:
+            try:
+                self.run_nodes('hostname')
+            except fabric.exceptions.GroupException:
+                time.sleep(sleep_time + random.uniform(0, sleep_time/5))
+                sleep_time = min(sleep_time*2, 60)
+            else:
+                break
+
     @property
     def nodes(self):
         try:
@@ -214,7 +225,7 @@ class Job:
                 host, user=user, gateway=self.connection) for host in self.hostnames]
             connections = fabric.ThreadingGroup.from_connections(connections)
             self.__nodes = connections
-            self.run_nodes('hostname')  # openning all the connections
+            self.__open_nodes_connection()
             return self.__nodes
 
     def apt_install(self, *packages):
