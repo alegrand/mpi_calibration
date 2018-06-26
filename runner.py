@@ -17,7 +17,7 @@ def run_all(username, site, cluster, possible_node_id, nb_runs=None, deploy=True
     node_failure_count = collections.Counter()
     node_tentative_count = collections.Counter()
     deploy_str = '--deploy ' if deploy else ''
-    script = 'python3 fabfile.py %srennes tocornebize jobid $OAR_JOB_ID' % deploy_str
+    script = 'python3 fabfile.py %s%s tocornebize jobid $OAR_JOB_ID' % (deploy_str, site)
     for i, (node1, node2) in enumerate(choices):
         node_tentative_count[node1] += 1
         node_tentative_count[node2] += 1

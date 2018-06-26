@@ -411,6 +411,7 @@ def get_job(args, nb_nodes=2, check_nb_nodes=False):
         if len(job.hostnames) != 2:
             logger.error(
                 'Wrong number of nodes for job: got %d, expected 2.' % len(job.hostnames))
+            logger.error('Hostname(s): %s' % ' '.join(job.hostnames))
             job.oardel()
             sys.exit()
     return job
