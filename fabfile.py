@@ -420,7 +420,7 @@ def get_job(args, nb_nodes=2, check_nb_nodes=False):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description='Automatic MPI calibration')
-    parser.add_argument('site', choices=['lyon', 'rennes', 'nancy'],
+    parser.add_argument('site', choices=['grenoble', 'lille', 'luxembourg', 'nancy', 'nantes', 'rennes', 'sophia'],
                         help='Site for the experiment.')
     parser.add_argument('username', type=str,
                         help='username to use for the experiment.')
