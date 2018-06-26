@@ -2,7 +2,6 @@
 
 import re
 import datetime
-import invoke
 import fabric
 import logging
 import colorlog
@@ -13,6 +12,8 @@ import tempfile
 import argparse
 import zipfile
 import yaml
+import random
+import json
 import io
 
 handler = colorlog.StreamHandler()
@@ -53,9 +54,10 @@ class Time:
 class Job:
     auto_oardel = False
 
-    def __init__(self, jobid, connection):
+    def __init__(self, jobid, connection, deploy=True):
         self.jobid = jobid
         self.connection = connection
+        self.deploy = deploy
 
     def __del__(self):
         if self.auto_oardel:
@@ -73,11 +75,13 @@ class Job:
     def run_frontend(self, command, **kwargs):
         return self.__generic_run(self.connection, 'frontend', command, **kwargs)
 
-    def run_nodes(self, command, **kwargs):
+    def run_nodes(self, command, directory='/tmp', **kwargs):
+        command = 'cd %s && %s' % (directory, command)
         return self.__generic_run(self.nodes, 'allnodes', command, **kwargs)
 
     @classmethod
-    def run_node(cls, node, command, **kwargs):
+    def run_node(cls, node, command, directory='/tmp', **kwargs):
+        command = 'cd %s && %s' % (directory, command)
         return cls.__generic_run(node, node.host, command, **kwargs)
 
     @classmethod
@@ -111,24 +115,23 @@ class Job:
     def oar_node_file(self):
         return '/var/lib/oar/%d' % self.jobid
 
+    def oarstat(self):
+        result = self.run_frontend('oarstat -fJ -j %d' % self.jobid, hide_output=False)
+        return json.loads(result.stdout)[str(self.jobid)]
+
     def __find_hostnames(self):
-        tmp_file = tempfile.NamedTemporaryFile(dir='.')
-        sleep_time = 1
+        # TODO Use oarstat -fJ
+        sleep_time = 5
         while True:  # we wait for the job to be launched, i.e., the oarfile to exist
-            try:
-                self.run_frontend('test -f %s' % self.oar_node_file)
-            except invoke.UnexpectedExit:
-                time.sleep(sleep_time)
+            stat = self.oarstat()
+            hostnames = stat['assigned_network_address']
+            if not hostnames:
+                time.sleep(sleep_time + random.uniform(0, sleep_time/5))
                 sleep_time = min(sleep_time*2, 60)
             else:
                 break
-        self.get_frontend(self.oar_node_file, tmp_file.name)
-        hostnames = set()
-        with open(tmp_file.name) as node_file:
-            for line in node_file:
-                hostnames.add(line.strip())
-        tmp_file.close()
-        self.__hostnames = list(sorted(hostnames))
+        hostnames.sort()
+        self.__hostnames = hostnames
 
     @property
     def hostnames(self):
@@ -139,6 +142,7 @@ class Job:
             return list(self.__hostnames)
 
     def kadeploy(self, env='debian9-x64-min'):
+        assert self.deploy
         # Wait for the oar_node_file to be available. Not required, just aesthetic.
         self.hostnames
         self.run_frontend('kadeploy3 -k -f %s -e %s' %
@@ -149,11 +153,15 @@ class Job:
         return '%s(%d)' % (self.__class__.__name__, self.jobid)
 
     @classmethod
-    def oarsub(cls, connection, constraint, walltime, nb_nodes, immediate=True, script=None):
+    def oarsub(cls, connection, constraint, walltime, nb_nodes, *, deploy=True, immediate=True, script=None):
         date = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         constraint = '%s/nodes=%d,walltime=%s' % (
             constraint, nb_nodes, walltime)
-        cmd = 'oarsub -t deploy -l "%s"' % constraint
+        if deploy:
+            deploy_str = '-t deploy '
+        else:
+            deploy_str = '-t allow_classic_ssh'
+        cmd = 'oarsub %s -l "%s"' % (deploy_str, constraint)
         if immediate:
             cmd += ' -r "%s"' % date
         if script:
@@ -163,17 +171,17 @@ class Job:
             connection, 'frontend', cmd, hide_output=False)
         regex = re.compile('OAR_JOB_ID=(\d+)')
         jobid = int(regex.search(result.stdout).groups()[0])
-        return cls(jobid, connection=connection)
+        return cls(jobid, connection=connection, deploy=deploy)
 
     @classmethod
-    def oarsub_cluster(cls, site, username, clusters, walltime, nb_nodes, immediate=True, script=None):
+    def oarsub_cluster(cls, site, username, clusters, walltime, nb_nodes, *, deploy=True, immediate=True, script=None):
         connection = cls.g5k_connection(site, username)
         clusters = ["'%s'" % clus for clus in clusters]
         constraint = "{cluster in (%s)}" % ', '.join(clusters)
-        return cls.oarsub(connection, constraint, walltime, nb_nodes, immediate=immediate, script=script)
+        return cls.oarsub(connection, constraint, walltime, nb_nodes, deploy=deploy, immediate=immediate, script=script)
 
     @classmethod
-    def oarsub_hostnames(cls, site, username, hostnames, walltime, nb_nodes=None, immediate=True, script=None):
+    def oarsub_hostnames(cls, site, username, hostnames, walltime, nb_nodes=None, *, deploy=True, immediate=True, script=None):
         def expandg5k(host, site):
             if 'grid5000' not in host:
                 host = '%s.%s.grid5000.fr' % (host, site)
@@ -183,7 +191,7 @@ class Job:
         constraint = "{network_address in (%s)}" % ', '.join(hostnames)
         if nb_nodes is None:
             nb_nodes = len(hostnames)
-        return cls.oarsub(connection, constraint, walltime, nb_nodes, immediate=immediate, script=script)
+        return cls.oarsub(connection, constraint, walltime, nb_nodes, deploy=deploy, immediate=immediate, script=script)
 
     @classmethod
     def g5k_connection(cls, site, username):
@@ -198,14 +206,19 @@ class Job:
         try:
             return self.__nodes
         except AttributeError:
+            if self.deploy:
+                user = 'root'
+            else:
+                user = self.connection.user
             connections = [fabric.Connection(
-                host, user='root', gateway=self.connection) for host in self.hostnames]
+                host, user=user, gateway=self.connection) for host in self.hostnames]
             connections = fabric.ThreadingGroup.from_connections(connections)
             self.__nodes = connections
             self.run_nodes('hostname')  # openning all the connections
             return self.__nodes
 
     def apt_install(self, *packages):
+        assert self.deploy
         self.run_nodes('apt update && apt upgrade -y')
         cmd = 'apt install -y %s' % ' '.join(packages)
         self.run_nodes(cmd)
@@ -218,7 +231,7 @@ class Job:
         for host in self.hostnames:
             if host == origin.host:
                 continue
-            self.run_node(origin, 'scp %s:%s information/%s' % (host, filename, host))
+            self.run_node(origin, 'scp %s:/tmp/%s information/%s' % (host, filename, host))
 
     def add_raw_information(self, archive_name):
         origin = self.nodes[0]
@@ -260,21 +273,22 @@ def mpi_install(job):
     logger.info(str(job))
     logger.info('Nodes: %s and %s' % tuple(job.hostnames))
     time.sleep(5)
-    job.kadeploy().apt_install(
-        'build-essential',
-        'python3',
-        'python3-dev',
-        'zip',
-        'make',
-        'git',
-        'time',
-        'libopenmpi-dev',
-        'openmpi-bin',
-        'libxml2',
-        'libxml2-dev',
-        'hwloc',
-        'pciutils'
-    )
+    if job.deploy:
+        job.kadeploy().apt_install(
+            'build-essential',
+            'python3',
+            'python3-dev',
+            'zip',
+            'make',
+            'git',
+            'time',
+            'libopenmpi-dev',
+            'openmpi-bin',
+            'libxml2',
+            'libxml2-dev',
+            'hwloc',
+            'pciutils'
+        )
     job.run_nodes(
         'git clone https://gitlab.inria.fr/simgrid/platform-calibration.git')
     job.run_nodes('cd platform-calibration/src/calibration && make')
@@ -282,20 +296,22 @@ def mpi_install(job):
 
 
 def send_key(job):
+    if not job.deploy:  # no need for that if this is not a fresh deploy
+        return
     origin = job.nodes[0]
     target = job.nodes[1]
-    job.run_node(origin, 'ssh-keygen -b 2048 -t rsa -f .ssh/id_rsa -q -N ""')
+    job.run_node(origin, 'ssh-keygen -b 2048 -t rsa -f .ssh/id_rsa -q -N ""', directory='~')
     tmp_file = tempfile.NamedTemporaryFile(dir='.')
     job.get(origin, '.ssh/id_rsa.pub', tmp_file.name)
     job.put(target, tmp_file.name, '/tmp/id_rsa.pub')
     tmp_file.close()
     job.run_node(
-        target, 'cat /tmp/id_rsa.pub >> .ssh/authorized_keys', hide_output=False)
+        target, 'cat /tmp/id_rsa.pub >> .ssh/authorized_keys', hide_output=False, directory='~')
     job.run_node(
-        origin, 'ssh -o "StrictHostKeyChecking no" %s hostname' % target.host)
+        origin, 'ssh -o "StrictHostKeyChecking no" %s hostname' % target.host, directory='~')
     short_target = target.host[:target.host.find('.')]
     job.run_node(
-        origin, 'ssh -o "StrictHostKeyChecking no" %s hostname' % short_target)
+        origin, 'ssh -o "StrictHostKeyChecking no" %s hostname' % short_target, directory='~')
 
 
 def run_calibration(job):
@@ -322,25 +338,22 @@ def run_calibration(job):
     tmp_file = tempfile.NamedTemporaryFile(dir='.')
     with open(tmp_file.name, 'w') as exp_file:
         exp_file.write(xml_content)
-    path = 'platform-calibration/src/calibration'
+    path = '/tmp/platform-calibration/src/calibration'
     node_exp_filename = 'exp.xml'
     job.put_nodes(tmp_file.name, path + '/' + node_exp_filename)
     tmp_file.close()
     job.run_nodes('mkdir -p %s' % (path + '/exp'))
-    with origin.cd(path):
-        host = ','.join([node.host for node in job.nodes])
-        logger.info('[%s] cd %s' % (origin.host, path))
-        start_date = datetime.datetime.now()
-        job.run_node(origin, 'mpirun --allow-run-as-root -np 2 -host %s ./calibrate -f %s' %
-                     (host, node_exp_filename))
-        end_date = datetime.datetime.now()
-        job.run_node(origin, 'zip -r exp.zip exp')
-        archive_name = '%s-%s_%s_%d.zip' % (remove_g5k(origin.host), remove_g5k(target.host), datetime.date.today(),
-                                            job.jobid)
-        job.run_node(origin, 'mv exp.zip ~/%s' % archive_name)
-        logger.info('[%s] cd ~' % origin.host)
-    job.add_raw_information(archive_name)
-    job.get(origin, archive_name, archive_name)
+    host = ','.join([node.host for node in job.nodes])
+    start_date = datetime.datetime.now()
+    job.run_node(origin, 'mpirun --allow-run-as-root -np 2 -host %s ./calibrate -f %s' %
+                 (host, node_exp_filename), directory=path)
+    end_date = datetime.datetime.now()
+    archive_name = '%s-%s_%s_%d.zip' % (remove_g5k(origin.host), remove_g5k(target.host), datetime.date.today(),
+                                        job.jobid)
+    archive_path = '/tmp/%s' % archive_name
+    job.run_node(origin, 'zip -r %s exp' % archive_path, directory=path)
+    job.add_raw_information(archive_path)
+    job.get(origin, archive_path, archive_name)
     tmp_file = tempfile.NamedTemporaryFile(dir='.')
     job_info = job.platform_information()
     job_info['start'] = start_date.isoformat()
@@ -349,6 +362,9 @@ def run_calibration(job):
         yaml.dump(job_info, f, default_flow_style=False)
     archive = zipfile.ZipFile(archive_name, 'a')
     archive.write(tmp_file.name, 'info.yaml')
+    with open(tmp_file.name, 'w') as f:
+        yaml.dump(job.oarstat(), f, default_flow_style=False)
+    archive.write(tmp_file.name, 'oarstat.yaml')
     with open(tmp_file.name, 'w') as f:
         log = log_stream.getvalue()
         log = log.encode('ascii', 'ignore').decode()  # removing any non-ascii character
@@ -368,15 +384,16 @@ def mpi_calibration(job):
 def get_job(args, nb_nodes=2, check_nb_nodes=False):
     user = args.username
     site = args.site
+    deploy = args.deploy
     if hasattr(args, 'cluster'):
         job = Job.oarsub_cluster(site, user, clusters=[
-                                 args.cluster], walltime=Time(minutes=15), nb_nodes=2)
+                                 args.cluster], walltime=Time(minutes=15), nb_nodes=2, deploy=deploy)
     elif hasattr(args, 'nodes'):
         job = Job.oarsub_hostnames(
-            site, user, hostnames=args.nodes, walltime=Time(minutes=15))
+            site, user, hostnames=args.nodes, walltime=Time(minutes=15), deploy=deploy)
     else:
         connection = Job.g5k_connection(site, user)
-        job = Job(args.jobid, connection)
+        job = Job(args.jobid, connection, deploy=deploy)
     if check_nb_nodes:
         if len(job.hostnames) != 2:
             logger.error(
@@ -392,7 +409,9 @@ if __name__ == '__main__':
     parser.add_argument('site', choices=['lyon', 'rennes', 'nancy'],
                         help='Site for the experiment.')
     parser.add_argument('username', type=str,
-                        help='Username to use for the experiment.')
+                        help='username to use for the experiment.')
+    parser.add_argument('--deploy', action='store_true',
+                        default=False, help='Do a full node deployment.')
     sp = parser.add_subparsers()
     sp_cluster = sp.add_parser('cluster', help='Cluster for the experiment.')
     sp_cluster.add_argument('cluster', type=str)
