@@ -36,12 +36,13 @@ def run_all(username, site, cluster, possible_node_id, nb_runs=None, deploy=True
             failure_count += 1
             node_failure_count[node1] += 1
             node_failure_count[node2] += 1
-    fabfile.logger.warning('oarsub failed %d times' % failure_count)
-    fabfile.logger.warning('failure count per node:')
+    if failure_count > 0:
+        fabfile.logger.warning('oarsub failed %d times' % failure_count)
+        fabfile.logger.warning('failure count per node:')
     for node, nb_failures in sorted(node_failure_count.items()):
         fabfile.logger.warning('    node %s failed %d/%d times' % (node, nb_failures, node_tentative_count[node]))
     for node, nb_failures in sorted(node_failure_count.items()):
-        if nb_failures == node_tentative_count[node]:
+        if nb_failures == node_tentative_count[node] and nb_failures > 1:
             fabfile.logger.error('Node %s failed every time, consider removing it from your test.' % node)
 
 
