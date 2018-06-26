@@ -218,9 +218,10 @@ class Job:
             return self.__nodes
 
     def apt_install(self, *packages):
-        assert self.deploy
-        self.run_nodes('apt update && apt upgrade -y')
-        cmd = 'apt install -y %s' % ' '.join(packages)
+        sudo = 'sudo-g5k ' if not self.deploy else ''
+        cmd = '{0}apt update && {0}apt upgrade -y'.format(sudo)
+        self.run_nodes(cmd)
+        cmd = sudo + 'apt install -y %s' % ' '.join(packages)
         self.run_nodes(cmd)
         return self
 
@@ -274,21 +275,22 @@ def mpi_install(job):
     logger.info('Nodes: %s and %s' % tuple(job.hostnames))
     time.sleep(5)
     if job.deploy:
-        job.kadeploy().apt_install(
-            'build-essential',
-            'python3',
-            'python3-dev',
-            'zip',
-            'make',
-            'git',
-            'time',
-            'libopenmpi-dev',
-            'openmpi-bin',
-            'libxml2',
-            'libxml2-dev',
-            'hwloc',
-            'pciutils'
-        )
+        job.kadeploy()
+    job.apt_install(
+        'build-essential',
+        'python3',
+        'python3-dev',
+        'zip',
+        'make',
+        'git',
+        'time',
+        'libopenmpi-dev',
+        'openmpi-bin',
+        'libxml2',
+        'libxml2-dev',
+        'hwloc',
+        'pciutils'
+    )
     job.run_nodes(
         'git clone https://gitlab.inria.fr/simgrid/platform-calibration.git')
     job.run_nodes('cd platform-calibration/src/calibration && make')
