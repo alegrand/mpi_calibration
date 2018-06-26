@@ -153,15 +153,13 @@ class Job:
         return '%s(%d)' % (self.__class__.__name__, self.jobid)
 
     @classmethod
-    def oarsub(cls, connection, constraint, walltime, nb_nodes, *, deploy=True, immediate=True, script=None):
+    def oarsub(cls, connection, constraint, walltime, nb_nodes, *, deploy=True, queue=None, immediate=True, script=None):
         date = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         constraint = '%s/nodes=%d,walltime=%s' % (
             constraint, nb_nodes, walltime)
-        if deploy:
-            deploy_str = '-t deploy '
-        else:
-            deploy_str = '-t allow_classic_ssh'
-        cmd = 'oarsub %s -l "%s"' % (deploy_str, constraint)
+        deploy_str = '-t deploy ' if deploy else '-t allow_classic_ssh'
+        queue_str = '-q %s ' % queue if queue else ''
+        cmd = 'oarsub %s%s -l "%s"' % (queue_str, deploy_str, constraint)
         if immediate:
             cmd += ' -r "%s"' % date
         if script:
@@ -174,14 +172,14 @@ class Job:
         return cls(jobid, connection=connection, deploy=deploy)
 
     @classmethod
-    def oarsub_cluster(cls, site, username, clusters, walltime, nb_nodes, *, deploy=True, immediate=True, script=None):
+    def oarsub_cluster(cls, site, username, clusters, walltime, nb_nodes, *, deploy=True, queue=None, immediate=True, script=None):
         connection = cls.g5k_connection(site, username)
         clusters = ["'%s'" % clus for clus in clusters]
         constraint = "{cluster in (%s)}" % ', '.join(clusters)
-        return cls.oarsub(connection, constraint, walltime, nb_nodes, deploy=deploy, immediate=immediate, script=script)
+        return cls.oarsub(connection, constraint, walltime, nb_nodes, deploy=deploy, queue=queue, immediate=immediate, script=script)
 
     @classmethod
-    def oarsub_hostnames(cls, site, username, hostnames, walltime, nb_nodes=None, *, deploy=True, immediate=True, script=None):
+    def oarsub_hostnames(cls, site, username, hostnames, walltime, nb_nodes=None, *, deploy=True, queue=None, immediate=True, script=None):
         def expandg5k(host, site):
             if 'grid5000' not in host:
                 host = '%s.%s.grid5000.fr' % (host, site)
@@ -191,7 +189,7 @@ class Job:
         constraint = "{network_address in (%s)}" % ', '.join(hostnames)
         if nb_nodes is None:
             nb_nodes = len(hostnames)
-        return cls.oarsub(connection, constraint, walltime, nb_nodes, deploy=deploy, immediate=immediate, script=script)
+        return cls.oarsub(connection, constraint, walltime, nb_nodes, deploy=deploy, queue=queue, immediate=immediate, script=script)
 
     @classmethod
     def g5k_connection(cls, site, username):
@@ -398,12 +396,13 @@ def get_job(args, nb_nodes=2, check_nb_nodes=False):
     user = args.username
     site = args.site
     deploy = args.deploy
+    queue = args.queue
     if hasattr(args, 'cluster'):
         job = Job.oarsub_cluster(site, user, clusters=[
-                                 args.cluster], walltime=Time(minutes=15), nb_nodes=2, deploy=deploy)
+                                 args.cluster], walltime=Time(minutes=15), nb_nodes=2, deploy=deploy, queue=queue)
     elif hasattr(args, 'nodes'):
         job = Job.oarsub_hostnames(
-            site, user, hostnames=args.nodes, walltime=Time(minutes=15), deploy=deploy)
+            site, user, hostnames=args.nodes, walltime=Time(minutes=15), deploy=deploy, queue=queue)
     else:
         connection = Job.g5k_connection(site, user)
         job = Job(args.jobid, connection, deploy=deploy)
@@ -426,6 +425,8 @@ if __name__ == '__main__':
                         help='username to use for the experiment.')
     parser.add_argument('--deploy', action='store_true',
                         default=False, help='Do a full node deployment.')
+    parser.add_argument('--queue', choices=['testing', 'production'],
+                        default=None, help='Use a non-default queue.')
     sp = parser.add_subparsers()
     sp_cluster = sp.add_parser('cluster', help='Cluster for the experiment.')
     sp_cluster.add_argument('cluster', type=str)
