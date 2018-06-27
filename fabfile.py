@@ -273,27 +273,24 @@ class Job:
                 result[host.host][cmd_name] = res.stdout.strip()
             if len(set([result[h][cmd_name] for h in self.hostnames])) != 1:
                 logger.warning('Different settings found for %s (command %s)' % (cmd_name, cmd))
-        for node in self.nodes:
+        arp_output = self.run_nodes('arp -a', hide_output=False)
+        for node, arp in arp_output.items():
+            arp_dict = {}
+            for line in arp.stdout.strip().split('\n'):
+                hostname, *rest = line.split()
+                try:
+                    arp_dict[hostname].append(rest)
+                except KeyError:
+                    arp_dict[hostname] = [rest]
             origin = node.host
             res = result[origin]
             res['ip_address'] = self.run_node(node, 'hostname -I', hide_output=False).stdout.strip()
-            res['hosts'] = {}
-            res = res['hosts']
-            for target in self.hostnames:
-                res[target] = []
-                if origin == target:
-                    pass  # TODO continue instead of pass
-                ip_addresses = self.run_node(node, 'getent hosts %s' % target, hide_output=False).stdout
-                ip_addresses = ip_addresses.strip().split('\n')
-                ip_addresses = [addr.split()[0] for addr in ip_addresses]
-                for addr in ip_addresses:
-                    interface = self.run_node(node, 'ip route get %s' % addr, hide_output=False).stdout.strip()
-                    interface = interface.split()
-                    if interface[0] == 'local':
-                        interface = interface[3]
-                    else:
-                        interface = interface[2]
-                    res[target].append({'ip_address': addr, 'interface': interface})
+            res['arp'] = {}
+            res = res['arp']
+            for hostname, interfaces in arp_dict.items():
+                res[hostname] = []
+                for line in interfaces:
+                    res[hostname].append(' '.join(line))
         result['site'] = self.connection.host
         result['jobid'] = self.jobid
         result['command'] = ' '.join(sys.argv)
@@ -319,7 +316,8 @@ def mpi_install(job):
         'libxml2',
         'libxml2-dev',
         'hwloc',
-        'pciutils'
+        'pciutils',
+        'net-tools',
     )
     job.run_nodes(
         'git clone https://gitlab.inria.fr/simgrid/platform-calibration.git')
