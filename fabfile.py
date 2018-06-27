@@ -54,7 +54,7 @@ class Time:
 class Job:
     auto_oardel = False
 
-    def __init__(self, jobid, connection, deploy=True):
+    def __init__(self, jobid, connection, deploy=False):
         self.jobid = jobid
         self.connection = connection
         self.deploy = deploy
@@ -294,6 +294,7 @@ class Job:
                     res[hostname].append(' '.join(line))
         result['site'] = self.connection.host
         result['jobid'] = self.jobid
+        result['deployment'] = self.deploy
         result['command'] = ' '.join(sys.argv)
         return result
 
@@ -303,7 +304,10 @@ def mpi_install(job):
     logger.info('Nodes: %s and %s' % tuple(job.hostnames))
     time.sleep(5)
     if job.deploy:
-        job.kadeploy()
+        if isinstance(job.deploy, str):
+            job.kadeploy(env=job.deploy)
+        else:
+            job.kadeploy()
     job.apt_install(
         'build-essential',
         'python3',
@@ -443,7 +447,7 @@ if __name__ == '__main__':
                         help='Site for the experiment.')
     parser.add_argument('username', type=str,
                         help='username to use for the experiment.')
-    parser.add_argument('--deploy', action='store_true',
+    parser.add_argument('--deploy', choices=['debian9-x64-%s' % mode for mode in ['min', 'base', 'nfs', 'big']],
                         default=False, help='Do a full node deployment.')
     parser.add_argument('--queue', choices=['testing', 'production'],
                         default=None, help='Use a non-default queue.')
@@ -457,11 +461,3 @@ if __name__ == '__main__':
     args = parser.parse_args()
     job = get_job(args, check_nb_nodes=True)
     mpi_calibration(job)
-
-# TODO
-# Call the script with:
-#   - <site> <cluster>
-#   - <site> <node1> <node2>
-#   - <site> <jobid>
-# Call the script from the laptop or a frontend.
-# Then, do another script that copy this script and do a 'oarsub "python fabfile.py jobid"'.
