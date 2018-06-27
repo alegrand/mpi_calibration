@@ -273,7 +273,8 @@ class Job:
                 result[host.host][cmd_name] = res.stdout.strip()
             if len(set([result[h][cmd_name] for h in self.hostnames])) != 1:
                 logger.warning('Different settings found for %s (command %s)' % (cmd_name, cmd))
-        arp_output = self.run_nodes('arp -a', hide_output=False)
+        arp_cmd = 'arp -a' if self.deploy else 'sudo-g5k arp -a'
+        arp_output = self.run_nodes(arp_cmd, hide_output=False)
         for node, arp in arp_output.items():
             arp_dict = {}
             for line in arp.stdout.strip().split('\n'):
