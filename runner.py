@@ -5,9 +5,6 @@ import collections
 import invoke
 
 
-random.seed(42)
-
-
 def run_all(username, site, cluster, possible_node_id, nb_runs=None, deploy=True):
     possible_nodes = ['%s-%d' % (cluster, node_id) for node_id in possible_node_id]
     combinations = list(itertools.combinations(possible_nodes, 2))
@@ -16,7 +13,7 @@ def run_all(username, site, cluster, possible_node_id, nb_runs=None, deploy=True
     failure_count = 0
     node_failure_count = collections.Counter()
     node_tentative_count = collections.Counter()
-    deploy_str = '--deploy ' if deploy else ''
+    deploy_str = '--deploy %s ' % deploy if deploy else ''
     script = 'python3 fabfile.py %s%s tocornebize jobid $OAR_JOB_ID' % (deploy_str, site)
     for i, (node1, node2) in enumerate(choices):
         node_tentative_count[node1] += 1
@@ -46,4 +43,8 @@ def run_all(username, site, cluster, possible_node_id, nb_runs=None, deploy=True
             fabfile.logger.error('Node %s failed every time, consider removing it from your test.' % node)
 
 
-run_all('tocornebize', 'lyon', 'taurus', range(1, 20), 10, deploy=False)
+deployments = ['debian9-x64-%s' % mode for mode in ['min', 'base', 'nfs', 'big']]
+deployments = [False] + deployments
+for dep in deployments:
+    random.seed(42)
+    run_all('tocornebize', 'lyon', 'taurus', range(1, 20), 7, deploy=dep)

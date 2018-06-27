@@ -461,3 +461,4 @@ if __name__ == '__main__':
     args = parser.parse_args()
     job = get_job(args, check_nb_nodes=True)
     mpi_calibration(job)
+    job.oardel()
