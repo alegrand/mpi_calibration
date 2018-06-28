@@ -47,4 +47,4 @@ deployments = ['debian9-x64-%s' % mode for mode in ['min', 'base', 'nfs', 'big']
 deployments = [False] + deployments
 for dep in deployments:
     random.seed(42)
-    run_all('tocornebize', 'lyon', 'taurus', range(1, 20), 7, deploy=dep)
+    run_all('tocornebize', 'rennes', 'paravance', range(1, 20), 7, deploy=dep)

@@ -18,6 +18,7 @@ altair = "*"
 pandas = "*"
 vega-datasets = "*"
 scipy = "*"
+palettable = "*"
 
 [requires]
 python_version = "3.6"
