@@ -235,6 +235,8 @@ class Job:
         return self
 
     def __add_raw_information(self, archive_name, filename, command):
+        if not self.deploy:
+            command = 'sudo-g5k %s' % command
         self.run_nodes(command, hide_output=False)
         origin = self.nodes[0]
         self.run_node(origin, 'cp %s information/%s' % (filename, origin.host))
@@ -252,7 +254,8 @@ class Job:
                     'environment.txt': 'env > environment.txt',
                     'topology.xml': 'lstopo topology.xml',
                     'topology.pdf': 'lstopo topology.pdf',
-                    'lspci.txt': 'lspci -v > lspci.txt'
+                    'lspci.txt': 'lspci -v > lspci.txt',
+                    'dmidecode.txt': 'dmidecode > dmidecode.txt',
                     }
         for filename, command in commands_with_files.items():
             self.__add_raw_information(archive_name, filename, command)
