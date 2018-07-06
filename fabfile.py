@@ -424,13 +424,14 @@ def get_job(args, nb_nodes=2, check_nb_nodes=False):
     site = args.site
     deploy = args.deploy
     queue = args.queue
-    if hasattr(args, 'cluster'):
+    if args.submission_type == 'cluster':
         job = Job.oarsub_cluster(site, user, clusters=[
                                  args.cluster], walltime=Time(minutes=15), nb_nodes=2, deploy=deploy, queue=queue)
-    elif hasattr(args, 'nodes'):
+    elif args.submission_type == 'nodes':
         job = Job.oarsub_hostnames(
             site, user, hostnames=args.nodes, walltime=Time(minutes=15), deploy=deploy, queue=queue)
     else:
+        assert args.submission_type == 'jobid'
         connection = Job.g5k_connection(site, user)
         job = Job(args.jobid, connection, deploy=deploy)
     if check_nb_nodes:
@@ -454,7 +455,8 @@ if __name__ == '__main__':
                         default=False, help='Do a full node deployment.')
     parser.add_argument('--queue', choices=['testing', 'production'],
                         default=None, help='Use a non-default queue.')
-    sp = parser.add_subparsers()
+    sp = parser.add_subparsers(dest='submission_type')
+    sp.required = True
     sp_cluster = sp.add_parser('cluster', help='Cluster for the experiment.')
     sp_cluster.add_argument('cluster', type=str)
     sp_nodes = sp.add_parser('nodes', help='Nodes for the experiment.')
