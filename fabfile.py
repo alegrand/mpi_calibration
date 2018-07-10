@@ -64,7 +64,7 @@ class Job:
             self.oardel()
 
     @staticmethod
-    def __generic_run(connection, title, command, hide_output=True, **kwargs):
+    def _generic_run(connection, title, command, hide_output=True, **kwargs):
         logger.info('[%s] %s' % (title, command))
         if 'hide' not in kwargs:
             kwargs['hide'] = True
@@ -73,16 +73,16 @@ class Job:
         return connection.run(command, **kwargs)
 
     def run_frontend(self, command, **kwargs):
-        return self.__generic_run(self.connection, 'frontend', command, **kwargs)
+        return self._generic_run(self.connection, 'frontend', command, **kwargs)
 
     def run_nodes(self, command, directory='/tmp', **kwargs):
         command = 'cd %s && %s' % (directory, command)
-        return self.__generic_run(self.nodes, 'allnodes', command, **kwargs)
+        return self._generic_run(self.nodes, 'allnodes', command, **kwargs)
 
     @classmethod
     def run_node(cls, node, command, directory='/tmp', **kwargs):
         command = 'cd %s && %s' % (directory, command)
-        return cls.__generic_run(node, node.host, command, **kwargs)
+        return cls._generic_run(node, node.host, command, **kwargs)
 
     @classmethod
     def put(cls, node, origin_file, target_file):
@@ -165,7 +165,7 @@ class Job:
         if script:
             assert not immediate
             cmd += " '%s'" % script
-        result = cls.__generic_run(
+        result = cls._generic_run(
             connection, 'frontend', cmd, hide_output=False)
         regex = re.compile('OAR_JOB_ID=(\d+)')
         jobid = int(regex.search(result.stdout).groups()[0])
