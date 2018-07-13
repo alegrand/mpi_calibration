@@ -18,22 +18,22 @@ def install_packages(job):
 
 
 def install_blas(job):
-    job.run_nodes('wget https://github.com/xianyi/OpenBLAS/archive/v0.3.1.zip -O openblas.zip')
-    job.run_nodes('unzip openblas.zip && mv OpenBLAS-* openblas')
-    job.run_nodes('cd openblas && make -j 64')
-    job.run_nodes('cd openblas && make install PREFIX=/tmp')
+    job.nodes.run('wget https://github.com/xianyi/OpenBLAS/archive/v0.3.1.zip -O openblas.zip')
+    job.nodes.run('unzip openblas.zip && mv OpenBLAS-* openblas')
+    job.nodes.run('make -j 64', directory='openblas')
+    job.nodes.run('make install PREFIX=/tmp', directory='openblas')
 
 
 def install_hpl(job):
-    job.run_nodes('wget http://www.netlib.org/benchmark/hpl/hpl-2.2.tar.gz')
-    job.run_nodes('tar -xvf hpl-2.2.tar.gz')
+    job.nodes.run('wget http://www.netlib.org/benchmark/hpl/hpl-2.2.tar.gz')
+    job.nodes.run('tar -xvf hpl-2.2.tar.gz')
     tmp_file = tempfile.NamedTemporaryFile(dir='.')
     with open(tmp_file.name, 'w') as f:
         f.write(HPL_MAKEFILE)
-    job.put_nodes(tmp_file.name, HPL_DIR + '/Make.Debian')
+    job.nodes.put(tmp_file.name, HPL_DIR + '/Make.Debian')
     tmp_file.close()
-    job.run_nodes('make startup arch=Debian', directory=HPL_DIR)
-    job.run_nodes('LD_LIBRARY_PATH=/tmp/lib make -j 64 arch=Debian', directory=HPL_DIR)
+    job.nodes.run('make startup arch=Debian', directory=HPL_DIR)
+    job.nodes.run('LD_LIBRARY_PATH=/tmp/lib make -j 64 arch=Debian', directory=HPL_DIR)
 
 
 def install(job):
@@ -88,15 +88,15 @@ def setup_hpl(job, **kwargs):
     tmp_file = tempfile.NamedTemporaryFile(dir='.')
     with open(tmp_file.name, 'w') as f:
         f.write(hpl_file)
-    job.put_nodes(tmp_file.name, HPL_DIR + '/bin/Debian/HPL.dat')
+    job.nodes.put(tmp_file.name, HPL_DIR + '/bin/Debian/HPL.dat')
     tmp_file.close()
 
 
 def get_nb_cores(job):
-    nb_cores = list(job.run_nodes('grep processor /proc/cpuinfo | wc -l', hide_output=False).values())
+    nb_cores = list(job.nodes.run('grep processor /proc/cpuinfo | wc -l', hide_output=False).values())
     nb_cores = [int(res.stdout) for res in nb_cores]
     if len(set(nb_cores)) != 1:
-        logger.warning('Heterogeneous cluster, got different number of cores: %s' % list(sorted(nb_proc)))
+        logger.warning('Heterogeneous cluster, got different number of cores: %s' % list(sorted(nb_cores)))
     return min(nb_cores) // 2
 
 
@@ -109,7 +109,7 @@ def run_hpl(job):
         nb_cores,
         hosts
     )
-    return job.run_node(job.nodes[0], cmd, hide_output=False, directory=HPL_DIR+'/bin/Debian')
+    return job.director.run_unique(cmd, hide_output=False, directory=HPL_DIR+'/bin/Debian')
 
 
 def parse_hpl(stdout):
@@ -130,12 +130,12 @@ def run(job, **kwargs):
 
 
 def estimate_peak(job, matrix_size=8192):
-    job.run_nodes('wget https://raw.githubusercontent.com/Ezibenroc/m2_internship_scripts/master/cblas_tests/dgemm_test.c')
+    job.nodes.run('wget https://raw.githubusercontent.com/Ezibenroc/m2_internship_scripts/master/cblas_tests/dgemm_test.c')
     nb_cores = get_nb_cores(job)
     arg = ' '.join([str(matrix_size)]*6)
-    job.run_nodes('LD_LIBRARY_PATH=/tmp/lib gcc -DUSE_OPENBLAS ./dgemm_test.c -fopenmp -I /tmp/include \
+    job.nodes.run('LD_LIBRARY_PATH=/tmp/lib gcc -DUSE_OPENBLAS ./dgemm_test.c -fopenmp -I /tmp/include \
             /tmp/lib/libopenblas.so -O3 -o ./dgemm_test')
-    all_output = job.run_nodes('OMP_NUM_THREADS=%d LD_LIBRARY_PATH=/tmp/lib ./dgemm_test %s ' % (nb_cores, arg),
+    all_output = job.nodes.run('OMP_NUM_THREADS=%d LD_LIBRARY_PATH=/tmp/lib ./dgemm_test %s ' % (nb_cores, arg),
                                hide_output=False)
     gflops = []
     for output in all_output.values():
