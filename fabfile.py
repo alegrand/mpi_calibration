@@ -6,6 +6,7 @@ import fabric
 import logging
 import colorlog
 import time
+import os
 import sys
 import socket
 import tempfile
@@ -49,6 +50,26 @@ class Time:
 
     def __repr__(self):
         return '%.2d:%.2d:%.2d' % (self.hours, self.minutes, self.seconds)
+
+
+class Nodes:
+    def __init__(self, nodes, name, working_dir):
+        self.nodes = fabric.ThreadingGroup.from_connections(nodes)
+        self.name = name
+        self.working_dir = working_dir
+
+    def run(self, command, directory=None, hide_output=True, **kwargs):
+        if directory:
+            directory = os.path.join(self.working_dir, directory)
+        else:
+            directory = self.working_dir
+        logger.info('[%s | %s] %s' % (self.name, directory, command))
+        if 'hide' not in kwargs:
+            kwargs['hide'] = True
+        command = 'cd %s && %s' % (directory, command)
+        if hide_output:
+            command = '%s &> /dev/null' % command
+        return self.nodes.run(command, **kwargs)
 
 
 class Job:

@@ -1,19 +1,42 @@
 import unittest
-from fabfile import Job, Time
+from fabfile import Job, Time, Nodes
 
 Job.auto_oardel = True
 
 
-class Test(unittest.TestCase):
+class Util(unittest.TestCase):
     site = 'lyon'
     cluster = 'taurus'
     nb_nodes = 4
     user = 'tocornebize'
 
+
+class TestBasic(Util):
     def test_frontend(self):
         frontend = Job.g5k_connection(self.site, self.user)
         result = frontend.run('hostname -f', hide=True).stdout.strip()
-        self.assertEqual(result, 'f%s.lyon.grid5000.fr' % self.site)
+        self.assertEqual(result, 'f%s.%s.grid5000.fr' % (self.site, self.site))
+
+
+class TestNodes(Util):
+    def assert_run(self, expected_result, *args, **kwargs):
+        kwargs['hide_output'] = False
+        result = self.node.run(*args, **kwargs)
+        self.assertEqual(len(result), 1)
+        result = list(result.values())[0].stdout.strip()
+        self.assertEqual(result, expected_result)
+
+    def test_run(self):
+        frontend = Job.g5k_connection(self.site, self.user)
+        self.node = Nodes([frontend], name='foo', working_dir='/tmp')
+        self.assert_run('f%s.%s.grid5000.fr' % (self.site, self.site), 'hostname -f')
+        self.assert_run('', 'mkdir -p foo/bar')
+        self.assert_run('/tmp/foo/bar', 'pwd', directory='foo/bar')
+        directory = '/home/%s' % self.user
+        self.assert_run(directory, 'pwd', directory=directory)
+
+
+class TestJob(Util):
 
     def test_job(self):
         job = Job.oarsub_cluster(site=self.site,
