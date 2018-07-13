@@ -1,4 +1,5 @@
 import unittest
+import tempfile
 from fabfile import Job, Time, Nodes
 
 Job.auto_oardel = True
@@ -35,6 +36,23 @@ class TestNodes(Util):
         directory = '/home/%s' % self.user
         self.assert_run(directory, 'pwd', directory=directory)
 
+    def test_put_get(self):
+        frontend = Job.g5k_connection(self.site, self.user)
+        self.node = Nodes([frontend], name='foo', working_dir='/home/%s' % self.user)
+        tmp_file = tempfile.NamedTemporaryFile(dir='.')
+        with open(tmp_file.name, 'w') as f:
+            f.write('hello, world!\n')
+        filename = 'test_fabfile'
+        self.node.put(tmp_file.name, filename)
+        self.assert_run('4dca0fd5f424a31b03ab807cbae77eb32bf2d089eed1cee154b3afed458de0dc  %s' % filename,
+                        'sha256sum %s' % filename)
+        tmp_new = tempfile.NamedTemporaryFile(dir='.')
+        self.node.get(filename, tmp_new.name)
+        with open(tmp_new.name, 'r') as f:
+            content = f.read()
+        self.assertEqual(content, 'hello, world!\n')
+        self.assert_run('', 'rm -f %s' % filename)
+
 
 class TestJob(Util):
 
@@ -46,16 +64,18 @@ class TestJob(Util):
                                  nb_nodes=self.nb_nodes,
                                  deploy=False,
                                  )
-        result = job.run_frontend('hostname -f', hide_output=False).stdout.strip()
+        result = job.frontend.run_unique('hostname -f', hide_output=False).stdout.strip()
         self.assertEqual(result, 'f%s.%s.grid5000.fr' % (self.site, self.site))
         hosts = job.hostnames
         self.assertEqual(len(set(hosts)), self.nb_nodes)
         for host in hosts:
             self.assertEqual(host[:len(self.cluster)], self.cluster)
-        self.assertEqual(set(job.hostnames), set([node.host for node in job.nodes]))
-        result = job.run_nodes('hostname -f', hide_output=False)
+        self.assertEqual(set(job.hostnames), set(job.nodes.hostnames))
+        result = job.nodes.run('hostname -f', hide_output=False)
         for node, res in result.items():
             self.assertEqual(node.host, res.stdout.strip())
+        result = job.nodes.run_unique('pwd', hide_output=False)
+        self.assertEqual(result.stdout.strip(), '/tmp')
 
 
 if __name__ == '__main__':

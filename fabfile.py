@@ -58,86 +58,75 @@ class Nodes:
         self.name = name
         self.working_dir = working_dir
 
-    def run(self, command, directory=None, hide_output=True, **kwargs):
-        if directory:
-            directory = os.path.join(self.working_dir, directory)
+    def __iter__(self):
+        yield from self.nodes
+
+    def run(self, command, **kwargs):
+        if 'directory' in kwargs:
+            directory = os.path.join(self.working_dir, kwargs['directory'])
+            del kwargs['directory']
         else:
             directory = self.working_dir
         logger.info('[%s | %s] %s' % (self.name, directory, command))
         if 'hide' not in kwargs:
             kwargs['hide'] = True
         command = 'cd %s && %s' % (directory, command)
-        if hide_output:
+        if 'hide_output' in kwargs:
+            if kwargs['hide_output']:
+                command = '%s &> /dev/null' % command
+            del kwargs['hide_output']
+        else:  # hide output by default
             command = '%s &> /dev/null' % command
         return self.nodes.run(command, **kwargs)
+
+    def run_unique(self, *args, **kwargs):
+        result = list(self.run(*args, **kwargs).values())
+        for res in result[1:]:
+            assert res.stdout == result[0].stdout
+            assert res.stderr == result[1].stderr
+        return result[0]
+
+    def put(self, origin_file, target_file):
+        target_file = os.path.join(self.working_dir, target_file)
+        logger.info('[%s] put: %s → %s' % (self.name, origin_file, target_file))
+        for node in self.nodes:
+            node.put(origin_file, target_file)
+
+    def get(self, origin_file, target_file):
+        assert len(self.nodes) == 1
+        origin_file = os.path.join(self.working_dir, origin_file)
+        logger.info('[%s] get: %s → %s' % (self.name, origin_file, target_file))
+        for node in self.nodes:
+            node.get(origin_file, target_file)
+
+    @property
+    def hostnames(self):
+        return [node.host for node in self.nodes]
 
 
 class Job:
     auto_oardel = False
 
-    def __init__(self, jobid, connection, deploy=False):
+    def __init__(self, jobid, frontend, deploy=False):
         self.jobid = jobid
-        self.connection = connection
+        self.frontend = frontend
         self.deploy = deploy
+        self.user = frontend.nodes[0].user
+        self.site = frontend.nodes[0].host
 
     def __del__(self):
         if self.auto_oardel:
             self.oardel()
 
-    @staticmethod
-    def _generic_run(connection, title, command, hide_output=True, **kwargs):
-        logger.info('[%s] %s' % (title, command))
-        if 'hide' not in kwargs:
-            kwargs['hide'] = True
-        if hide_output:
-            command = '%s &> /dev/null' % command
-        return connection.run(command, **kwargs)
-
-    def run_frontend(self, command, **kwargs):
-        return self._generic_run(self.connection, 'frontend', command, **kwargs)
-
-    def run_nodes(self, command, directory='/tmp', **kwargs):
-        command = 'cd %s && %s' % (directory, command)
-        return self._generic_run(self.nodes, 'allnodes', command, **kwargs)
-
-    @classmethod
-    def run_node(cls, node, command, directory='/tmp', **kwargs):
-        command = 'cd %s && %s' % (directory, command)
-        return cls._generic_run(node, node.host, command, **kwargs)
-
-    @classmethod
-    def put(cls, node, origin_file, target_file):
-        logger.info('[%s] put: %s → %s' %
-                    (node.host, origin_file, target_file))
-        node.put(origin_file, target_file)
-
-    def put_nodes(self, origin_file, target_file):
-        for node in self.nodes:
-            self.put(node, origin_file, target_file)
-
-    @classmethod
-    def get(cls, node, origin_file, target_file):
-        logger.info('[%s] get: %s → %s' %
-                    (node.host, origin_file, target_file))
-        node.get(origin_file, target_file)
-
-    def put_frontend(self, origin_file, target_file, **kwargs):
-        logger.info('[frontend] put: %s → %s' % (origin_file, target_file))
-        self.connection.put(origin_file, target_file)
-
-    def get_frontend(self, origin_file, target_file, **kwargs):
-        logger.info('[frontend] get: %s → %s' % (origin_file, target_file))
-        self.connection.get(origin_file, target_file)
-
     def oardel(self):
-        self.run_frontend('oardel %d' % self.jobid)
+        self.frontend.run('oardel %d' % self.jobid)
 
     @property
     def oar_node_file(self):
         return '/var/lib/oar/%d' % self.jobid
 
     def oarstat(self):
-        result = self.run_frontend('oarstat -fJ -j %d' % self.jobid, hide_output=False)
+        result = self.frontend.run_unique('oarstat -fJ -j %d' % self.jobid, hide_output=False)
         return json.loads(result.stdout)[str(self.jobid)]
 
     def __find_hostnames(self):
@@ -166,15 +155,15 @@ class Job:
         assert self.deploy
         # Wait for the oar_node_file to be available. Not required, just aesthetic.
         self.hostnames
-        self.run_frontend('kadeploy3 -k -f %s -e %s' %
-                          (self.oar_node_file, env))
+        self.frontend.run('kadeploy3 -k -f %s -e %s' % (self.oar_node_file, env))
         return self
 
     def __repr__(self):
         return '%s(%d)' % (self.__class__.__name__, self.jobid)
 
     @classmethod
-    def oarsub(cls, connection, constraint, walltime, nb_nodes, *, deploy=True, queue=None, immediate=True, script=None):
+    def oarsub(cls, frontend, constraint, walltime, nb_nodes, *,
+               deploy=True, queue=None, immediate=True, script=None):
         date = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         constraint = '%s/nodes=%d,walltime=%s' % (
             constraint, nb_nodes, walltime)
@@ -186,45 +175,51 @@ class Job:
         if script:
             assert not immediate
             cmd += " '%s'" % script
-        result = cls._generic_run(
-            connection, 'frontend', cmd, hide_output=False)
+        result = frontend.run_unique(cmd, hide_output=False)
         regex = re.compile('OAR_JOB_ID=(\d+)')
         jobid = int(regex.search(result.stdout).groups()[0])
-        return cls(jobid, connection=connection, deploy=deploy)
+        return cls(jobid, frontend=frontend, deploy=deploy)
 
     @classmethod
-    def oarsub_cluster(cls, site, username, clusters, walltime, nb_nodes, *, deploy=True, queue=None, immediate=True, script=None):
+    def oarsub_cluster(cls, site, username, clusters, walltime, nb_nodes, *,
+                       deploy=True, queue=None, immediate=True, script=None):
         connection = cls.g5k_connection(site, username)
+        frontend = Nodes([connection], name='frontend', working_dir='/home/%s' % username)
         clusters = ["'%s'" % clus for clus in clusters]
         constraint = "{cluster in (%s)}" % ', '.join(clusters)
-        return cls.oarsub(connection, constraint, walltime, nb_nodes, deploy=deploy, queue=queue, immediate=immediate, script=script)
+        return cls.oarsub(frontend, constraint, walltime, nb_nodes, deploy=deploy,
+                          queue=queue, immediate=immediate, script=script)
 
     @classmethod
-    def oarsub_hostnames(cls, site, username, hostnames, walltime, nb_nodes=None, *, deploy=True, queue=None, immediate=True, script=None):
+    def oarsub_hostnames(cls, site, username, hostnames, walltime, nb_nodes=None, *,
+                         deploy=True, queue=None, immediate=True, script=None):
         def expandg5k(host, site):
             if 'grid5000' not in host:
                 host = '%s.%s.grid5000.fr' % (host, site)
             return host
         connection = cls.g5k_connection(site, username)
+        frontend = Nodes([connection], name='frontend', working_dir='/home/%s' % username)
         hostnames = ["'%s'" % expandg5k(host, site) for host in hostnames]
         constraint = "{network_address in (%s)}" % ', '.join(hostnames)
         if nb_nodes is None:
             nb_nodes = len(hostnames)
-        return cls.oarsub(connection, constraint, walltime, nb_nodes, deploy=deploy, queue=queue, immediate=immediate, script=script)
+        return cls.oarsub(frontend, constraint, walltime, nb_nodes, deploy=deploy,
+                          queue=queue, immediate=immediate, script=script)
 
     @classmethod
     def g5k_connection(cls, site, username):
         if 'grid5000' in socket.getfqdn():  # already inside G5K, no need for a gateway
-            return fabric.Connection(site, user=username)
+            connection = fabric.Connection(site, user=username)
         else:
             gateway = fabric.Connection('access.grid5000.fr', user=username)
-            return fabric.Connection(site, user=username, gateway=gateway)
+            connection = fabric.Connection(site, user=username, gateway=gateway)
+        return connection
 
     def __open_nodes_connection(self):
         sleep_time = 5
         while True:
             try:
-                self.run_nodes('hostname')
+                self.nodes.run('echo "hello world"')
             except fabric.exceptions.GroupException:
                 time.sleep(sleep_time + random.uniform(0, sleep_time/5))
                 sleep_time = min(sleep_time*2, 60)
@@ -239,37 +234,36 @@ class Job:
             if self.deploy:
                 user = 'root'
             else:
-                user = self.connection.user
-            connections = [fabric.Connection(
-                host, user=user, gateway=self.connection) for host in self.hostnames]
-            connections = fabric.ThreadingGroup.from_connections(connections)
-            self.__nodes = connections
+                user = self.user
+            connections = [fabric.Connection(host, user=user, gateway=self.frontend.nodes[0])
+                           for host in self.hostnames]
+            self.__nodes = Nodes(connections, name='allnodes', working_dir='/tmp')
+            self.orchestra = Nodes(connections[1:], name='orchestra', working_dir='/tmp')
+            self.director = Nodes([connections[0]], name='director', working_dir='/tmp')
             self.__open_nodes_connection()
             return self.__nodes
 
     def apt_install(self, *packages):
         sudo = 'sudo-g5k ' if not self.deploy else ''
         cmd = '{0}apt update && {0}apt upgrade -y'.format(sudo)
-        self.run_nodes(cmd)
+        self.nodes.run(cmd)
         cmd = sudo + 'apt install -y %s' % ' '.join(packages)
-        self.run_nodes(cmd)
+        self.nodes.run(cmd)
         return self
 
     def __add_raw_information(self, archive_name, filename, command):
         if not self.deploy:
             command = 'sudo-g5k %s' % command
-        self.run_nodes(command, hide_output=False)
-        origin = self.nodes[0]
-        self.run_node(origin, 'cp %s information/%s' % (filename, origin.host))
+        self.nodes.run(command, hide_output=False)
+        self.director.run('cp %s information/%s' % (filename, self.director.hostnames[0]))
         for host in self.hostnames:
-            if host == origin.host:
+            if host == self.director.hostnames[0]:
                 continue
-            self.run_node(origin, 'scp %s:/tmp/%s information/%s' % (host, filename, host))
+            self.director.run('scp %s:/tmp/%s information/%s' % (host, filename, host))
 
     def add_raw_information(self, archive_name):
-        origin = self.nodes[0]
         for host in self.hostnames:
-            self.run_node(origin, 'mkdir -p information/%s' % host)
+            self.director.run('mkdir -p information/%s' % host)
         commands_with_files = {
                     'cpuinfo.txt': 'cp /proc/cpuinfo cpuinfo.txt',
                     'environment.txt': 'env > environment.txt',
@@ -280,8 +274,8 @@ class Job:
                     }
         for filename, command in commands_with_files.items():
             self.__add_raw_information(archive_name, filename, command)
-        self.run_node(origin, 'zip -ru %s information' % archive_name)
-        self.run_node(origin, 'rm -rf information')
+        self.director.run('zip -ru %s information' % archive_name)
+        self.director.run('rm -rf information')
 
     def platform_information(self):
         commands = {'kernel': 'uname -r',
@@ -292,13 +286,13 @@ class Job:
                     }
         result = {host: {} for host in self.hostnames}
         for cmd_name, cmd in commands.items():
-            output = self.run_nodes(cmd, hide_output=False)
+            output = self.nodes.run(cmd, hide_output=False)
             for host, res in output.items():
                 result[host.host][cmd_name] = res.stdout.strip()
             if len(set([result[h][cmd_name] for h in self.hostnames])) != 1:
                 logger.warning('Different settings found for %s (command %s)' % (cmd_name, cmd))
         arp_cmd = 'arp -a' if self.deploy else 'sudo-g5k arp -a'
-        arp_output = self.run_nodes(arp_cmd, hide_output=False)
+        arp_output = self.nodes.run(arp_cmd, hide_output=False)
         for node, arp in arp_output.items():
             arp_dict = {}
             for line in arp.stdout.strip().split('\n'):
@@ -309,14 +303,14 @@ class Job:
                     arp_dict[hostname] = [rest]
             origin = node.host
             res = result[origin]
-            res['ip_address'] = self.run_node(node, 'hostname -I', hide_output=False).stdout.strip()
+#            res['ip_address'] = node.run('hostname -I').stdout.strip()
             res['arp'] = {}
             res = res['arp']
             for hostname, interfaces in arp_dict.items():
                 res[hostname] = []
                 for line in interfaces:
                     res[hostname].append(' '.join(line))
-        result['site'] = self.connection.host
+        result['site'] = self.site
         result['jobid'] = self.jobid
         result['deployment'] = self.deploy
         result['command'] = ' '.join(sys.argv)
@@ -348,36 +342,29 @@ def mpi_install(job):
         'pciutils',
         'net-tools',
     )
-    job.run_nodes(
-        'git clone https://gitlab.inria.fr/simgrid/platform-calibration.git')
-    job.run_nodes('cd platform-calibration/src/calibration && make')
+    job.nodes.run('git clone https://gitlab.inria.fr/simgrid/platform-calibration.git')
+    job.nodes.run('make', directory='platform-calibration/src/calibration')
     return job
 
 
 def send_key(job):
     if not job.deploy:  # no need for that if this is not a fresh deploy
         return
-    origin = job.nodes[0]
-    target = job.nodes[1]
-    job.run_node(origin, 'ssh-keygen -b 2048 -t rsa -f .ssh/id_rsa -q -N ""', directory='~')
+    job.director.run('ssh-keygen -b 2048 -t rsa -f .ssh/id_rsa -q -N ""', directory='/root')
     tmp_file = tempfile.NamedTemporaryFile(dir='.')
-    job.get(origin, '.ssh/id_rsa.pub', tmp_file.name)
-    job.put(target, tmp_file.name, '/tmp/id_rsa.pub')
+    job.director.get('/root/.ssh/id_rsa.pub', tmp_file.name)
+    job.orchestra.put(tmp_file.name, '/tmp/id_rsa.pub')
     tmp_file.close()
-    job.run_node(
-        target, 'cat /tmp/id_rsa.pub >> .ssh/authorized_keys', hide_output=False, directory='~')
-    job.run_node(
-        origin, 'ssh -o "StrictHostKeyChecking no" %s hostname' % target.host, directory='~')
-    short_target = target.host[:target.host.find('.')]
-    job.run_node(
-        origin, 'ssh -o "StrictHostKeyChecking no" %s hostname' % short_target, directory='~')
+    job.orchestra.run('cat /tmp/id_rsa.pub >> .ssh/authorized_keys', hide_output=False, directory='/root')
+    for host in job.orchestra.hostnames:
+        job.director.run('ssh -o "StrictHostKeyChecking no" %s hostname' % host, directory='/root')
+        short_target = host[:host.find('.')]
+        job.director.run('ssh -o "StrictHostKeyChecking no" %s hostname' % short_target, directory='/root')
 
 
 def run_calibration(job):
     def remove_g5k(hostname):
         return hostname[:hostname.index('.')]
-    origin = job.nodes[0]
-    target = job.nodes[1]
     xml_content = '''<?xml version="1.0"?>
         <config id="Config">
         <!-- prefix name for the output files -->
@@ -399,20 +386,22 @@ def run_calibration(job):
         exp_file.write(xml_content)
     path = '/tmp/platform-calibration/src/calibration'
     node_exp_filename = 'exp.xml'
-    job.put_nodes(tmp_file.name, path + '/' + node_exp_filename)
+    job.nodes.put(tmp_file.name, path + '/' + node_exp_filename)
     tmp_file.close()
-    job.run_nodes('mkdir -p %s' % (path + '/exp'))
+    job.nodes.run('mkdir -p %s' % (path + '/exp'))
     host = ','.join([node.host for node in job.nodes])
     start_date = datetime.datetime.now()
-    job.run_node(origin, 'mpirun --allow-run-as-root -np 2 -host %s ./calibrate -f %s' %
+    job.director.run('mpirun --allow-run-as-root -np 2 -host %s ./calibrate -f %s' %
                  (host, node_exp_filename), directory=path)
     end_date = datetime.datetime.now()
-    archive_name = '%s-%s_%s_%d.zip' % (remove_g5k(origin.host), remove_g5k(target.host), datetime.date.today(),
+    archive_name = '%s-%s_%s_%d.zip' % (remove_g5k(job.director.hostnames[0]),
+                                        remove_g5k(job.orchestra.hostnames[0]),
+                                        datetime.date.today(),
                                         job.jobid)
     archive_path = '/tmp/%s' % archive_name
-    job.run_node(origin, 'zip -r %s exp' % archive_path, directory=path)
+    job.director.run('zip -r %s exp' % archive_path, directory=path)
     job.add_raw_information(archive_path)
-    job.get(origin, archive_path, archive_name)
+    job.director.get(archive_path, archive_name)
     tmp_file = tempfile.NamedTemporaryFile(dir='.')
     job_info = job.platform_information()
     job_info['start'] = start_date.isoformat()
@@ -454,7 +443,8 @@ def get_job(args, nb_nodes=2, check_nb_nodes=False):
     else:
         assert args.submission_type == 'jobid'
         connection = Job.g5k_connection(site, user)
-        job = Job(args.jobid, connection, deploy=deploy)
+        frontend = Nodes([connection], name='frontend', working_dir='/home/%s' % user)
+        job = Job(args.jobid, frontend, deploy=deploy)
     if check_nb_nodes:
         if len(job.hostnames) != 2:
             logger.error(
