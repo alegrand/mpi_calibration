@@ -19,6 +19,8 @@ vega-datasets = "*"
 scipy = "*"
 palettable = "*"
 plotnine = "*"
+"rpy2" = "*"
+tzlocal = "*"
 
 [requires]
 python_version = "3.6"
