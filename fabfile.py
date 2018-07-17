@@ -140,6 +140,17 @@ class Nodes:
             self.__hyperthreads = sum(self.__hyperthreads, [])
             return self.__hyperthreads
 
+    def enable_hyperthreading(self):
+        self.__set_hyperthreads(1)
+
+    def disable_hyperthreading(self):
+        self.__set_hyperthreads(0)
+
+    def __set_hyperthreads(self, value):
+        assert value in (0, 1)
+        filenames = ['/sys/devices/system/cpu/cpu%d/online' % core_id for core_id in self.hyperthreads]
+        self.write_files(str(value), *filenames)
+
     def _get_all_cores(self):
         ref_cores = None
         all_xml = self.__get_platform_xml()

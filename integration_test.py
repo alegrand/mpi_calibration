@@ -105,6 +105,26 @@ class TestJob(Util):
         self.assertEqual(job.nodes.cores, expected_cores)
         self.assertEqual(set(job.nodes.hyperthreads), set(range(12, 24)))
 
+    def assert_run(self, expected_result, cmd):
+        result = self.job.nodes.run_unique(cmd, hide_output=False).stdout.strip()
+        self.assertEqual(result, expected_result)
+
+    def test_job_deploy(self):
+        job = Job.oarsub_cluster(site=self.site,
+                                 username=self.user,
+                                 clusters=[self.cluster],
+                                 walltime=Time(minutes=15),
+                                 nb_nodes=self.nb_nodes,
+                                 deploy=True,
+                                 )
+        job.kadeploy().apt_install('hwloc')
+        nb = len(job.nodes.hyperthreads)
+        self.assert_run(str(nb*2), 'grep processor /proc/cpuinfo | wc -l')
+        job.nodes.disable_hyperthreading()
+        self.assert_run(str(nb), 'grep processor /proc/cpuinfo | wc -l')
+        job.nodes.enable_hyperthreading()
+        self.assert_run(str(nb*2), 'grep processor /proc/cpuinfo | wc -l')
+
 
 if __name__ == '__main__':
     unittest.main()
