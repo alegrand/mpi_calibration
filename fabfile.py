@@ -16,6 +16,7 @@ import yaml
 import random
 import json
 import io
+import lxml.etree
 
 handler = colorlog.StreamHandler()
 formatter = colorlog.ColoredFormatter(
@@ -121,6 +122,64 @@ class Nodes:
                 remaining_files = ' '.join(target_files[1:])
                 cmd = 'cat %s | tee %s' % (target_files[0], remaining_files)
                 self.run(cmd)
+
+    @property
+    def cores(self):
+        try:
+            return self.__cores
+        except AttributeError:
+            self.__cores = self._get_all_cores()
+            return self.__cores
+
+    @property
+    def hyperthreads(self):
+        try:
+            return self.__hyperthreads
+        except AttributeError:
+            self.__hyperthreads = [group[1:] for group in self.cores]
+            self.__hyperthreads = sum(self.__hyperthreads, [])
+            return self.__hyperthreads
+
+    def _get_all_cores(self):
+        ref_cores = None
+        all_xml = self.__get_platform_xml()
+        for node, xml in all_xml.items():
+            cores = self.__get_all_cores(xml)
+            if ref_cores is None:
+                ref_cores = cores
+                ref_node = node
+            elif cores != ref_cores:
+                raise ValueError('Got different topologies for nodes %s and %s' % (ref_node.host, node.host))
+        return ref_cores
+
+    def __get_all_cores(self, xml):
+        xml = xml.findall('object')[0]
+        return self.__process_cache(xml)
+
+    def __get_platform_xml(self):
+        result = self.run('lstopo topology.xml && cat topology.xml', hide_output=False)
+        xml = {}
+        for node, output in result.items():
+            xml[node] = lxml.etree.fromstring(output.stdout.encode('utf8'))
+        return xml
+
+    def __process_cache(self, xml):
+        cache = xml.findall('object')
+        result = []
+        for obj in cache:
+            if obj.get('type') == 'Core':
+                result.append(self.__process_core(obj))
+            elif obj.get('type') in ('Machine', 'NUMANode', 'Package', 'Cache', 'L3Cache',
+                                     'L2Cache', 'L1Cache', 'L1iCache'):
+                result.extend(self.__process_cache(obj))
+        return result
+
+    def __process_core(self, xml):
+        result = []
+        for pu in xml.findall('object'):
+            assert pu.get('type') == 'PU'
+            result.append(int(pu.get('os_index')))
+        return result
 
 
 class Job:

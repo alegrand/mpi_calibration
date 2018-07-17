@@ -68,6 +68,16 @@ class TestNodes(Util):
                     self.assert_run('%s  %s' % (content_hash, filename), 'sha256sum %s' % filename)
                 self.assert_run('', 'rm -f %s' % ' '.join(filenames))
 
+    def test_cores(self):
+        frontend = Job.g5k_connection(self.site, self.user)
+        self.node = Nodes([frontend], name='foo', working_dir='/home/%s' % self.user)
+        self.assertEqual(self.node.cores, [[0, 1, 2, 3]])  # might change if the frontend server of Lyon changes
+
+    def test_hyperthreads(self):
+        frontend = Job.g5k_connection(self.site, self.user)
+        self.node = Nodes([frontend], name='foo', working_dir='/home/%s' % self.user)
+        self.assertEqual(self.node.hyperthreads, [1, 2, 3])  # might change if the frontend server of Lyon changes
+
 
 class TestJob(Util):
 
@@ -91,6 +101,9 @@ class TestJob(Util):
             self.assertEqual(node.host, res.stdout.strip())
         result = job.nodes.run_unique('pwd', hide_output=False)
         self.assertEqual(result.stdout.strip(), '/tmp')
+        expected_cores = [[i, i+12] for i in list(range(0, 12, 2)) + list(range(1, 12, 2))]
+        self.assertEqual(job.nodes.cores, expected_cores)
+        self.assertEqual(set(job.nodes.hyperthreads), set(range(12, 24)))
 
 
 if __name__ == '__main__':
