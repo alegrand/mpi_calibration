@@ -1,4 +1,5 @@
 import tempfile
+import os
 from fabfile import Job, Time, logger
 
 HPL_DIR = '/tmp/hpl-2.2'
@@ -27,11 +28,7 @@ def install_blas(job):
 def install_hpl(job):
     job.nodes.run('wget http://www.netlib.org/benchmark/hpl/hpl-2.2.tar.gz')
     job.nodes.run('tar -xvf hpl-2.2.tar.gz')
-    tmp_file = tempfile.NamedTemporaryFile(dir='.')
-    with open(tmp_file.name, 'w') as f:
-        f.write(HPL_MAKEFILE)
-    job.nodes.put(tmp_file.name, HPL_DIR + '/Make.Debian')
-    tmp_file.close()
+    job.nodes.write_files(HPL_MAKEFILE, os.path.join(HPL_DIR, 'Make.Debian'))
     job.nodes.run('make startup arch=Debian', directory=HPL_DIR)
     job.nodes.run('LD_LIBRARY_PATH=/tmp/lib make -j 64 arch=Debian', directory=HPL_DIR)
 
@@ -85,11 +82,7 @@ HPL.out         output file name (if any)
 
 def setup_hpl(job, **kwargs):
     hpl_file = generate_hpl_file(**kwargs)
-    tmp_file = tempfile.NamedTemporaryFile(dir='.')
-    with open(tmp_file.name, 'w') as f:
-        f.write(hpl_file)
-    job.nodes.put(tmp_file.name, HPL_DIR + '/bin/Debian/HPL.dat')
-    tmp_file.close()
+    job.nodes.write_files(hpl_file, os.path.join(HPL_DIR, 'bin/Debian/HPL.dat'))
 
 
 def get_nb_cores(job):

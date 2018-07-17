@@ -114,11 +114,13 @@ class Nodes:
         target_files = [os.path.join(self.working_dir, target) for target in target_files]
         if len(content) < 80:  # arbitrary threshold...
             cmd = "echo -n '%s' | tee %s" % (content, ' '.join(target_files))
+            self.run(cmd)
         else:
             self.__write_large_file(content, target_files[0])
-            remaining_files = ' '.join(target_files[1:])
-            cmd = 'cat %s | tee %s' % (target_files[0], remaining_files)
-        self.run(cmd)
+            if len(target_files) > 1:
+                remaining_files = ' '.join(target_files[1:])
+                cmd = 'cat %s | tee %s' % (target_files[0], remaining_files)
+                self.run(cmd)
 
 
 class Job:
@@ -263,9 +265,9 @@ class Job:
 
     def apt_install(self, *packages):
         sudo = 'sudo-g5k ' if not self.deploy else ''
-        cmd = '{0}apt update && {0}apt upgrade -y'.format(sudo)
+        cmd = '{0}apt update && {0}DEBIAN_FRONTEND=noninteractive apt upgrade -yq'.format(sudo)
         self.nodes.run(cmd)
-        cmd = sudo + 'apt install -y %s' % ' '.join(packages)
+        cmd = sudo + 'DEBIAN_FRONTEND=noninteractive apt install -y %s' % ' '.join(packages)
         self.nodes.run(cmd)
         return self
 
@@ -399,18 +401,14 @@ def run_calibration(job):
          <iterations value="5"/>
         </config>
     '''
-    tmp_file = tempfile.NamedTemporaryFile(dir='.')
-    with open(tmp_file.name, 'w') as exp_file:
-        exp_file.write(xml_content)
     path = '/tmp/platform-calibration/src/calibration'
     node_exp_filename = 'exp.xml'
-    job.nodes.put(tmp_file.name, path + '/' + node_exp_filename)
-    tmp_file.close()
+    job.nodes.write_files(xml_content, path + '/' + node_exp_filename)
     job.nodes.run('mkdir -p %s' % (path + '/exp'))
     host = ','.join([node.host for node in job.nodes])
     start_date = datetime.datetime.now()
-    job.director.run('mpirun --allow-run-as-root -np 2 -host %s ./calibrate -f %s' %
-                 (host, node_exp_filename), directory=path)
+    job.director.run('mpirun --allow-run-as-root -np 2 -host %s ./calibrate -f %s' % (host, node_exp_filename),
+                     directory=path)
     end_date = datetime.datetime.now()
     archive_name = '%s-%s_%s_%d.zip' % (remove_g5k(job.director.hostnames[0]),
                                         remove_g5k(job.orchestra.hostnames[0]),
