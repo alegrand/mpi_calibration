@@ -1,5 +1,8 @@
 import unittest
 import tempfile
+import random
+import string
+import hashlib
 from fabfile import Job, Time, Nodes
 
 Job.auto_oardel = True
@@ -53,6 +56,16 @@ class TestNodes(Util):
         self.assertEqual(content, 'hello, world!\n')
         self.assert_run('', 'rm -f %s' % filename)
 
+    def test_write_file(self):
+        frontend = Job.g5k_connection(self.site, self.user)
+        self.node = Nodes([frontend], name='foo', working_dir='/home/%s' % self.user)
+        filename = 'test_fabfile'
+        for size in [1, 10, 50, 100, 1000, 10000]:
+            content = ''.join(random.choices(string.ascii_lowercase + '\n\t ', k=size))
+            content_hash = hashlib.sha256(content.encode('ascii')).hexdigest()
+            self.node.write_file(content, filename)
+            self.assert_run('%s  %s' % (content_hash, filename), 'sha256sum %s' % filename)
+        self.assert_run('', 'rm -f %s' % filename)
 
 class TestJob(Util):
 
