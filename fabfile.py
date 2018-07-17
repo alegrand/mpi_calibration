@@ -103,17 +103,22 @@ class Nodes:
     def hostnames(self):
         return [node.host for node in self.nodes]
 
-    def write_file(self, content, target_file):
+    def __write_large_file(self, content, target_file):
+        tmp_file = tempfile.NamedTemporaryFile(dir='.')
+        with open(tmp_file.name, 'w') as f:
+            f.write(content)
+        self.put(tmp_file.name, target_file)
+        tmp_file.close()
+
+    def write_files(self, content, *target_files):
+        target_files = [os.path.join(self.working_dir, target) for target in target_files]
         if len(content) < 80:  # arbitrary threshold...
-            target_file = os.path.join(self.working_dir, target_file)
-            cmd = "echo -n '%s' > %s" % (content, target_file)
-            self.run(cmd, hide_output=False)
+            cmd = "echo -n '%s' | tee %s" % (content, ' '.join(target_files))
         else:
-            tmp_file = tempfile.NamedTemporaryFile(dir='.')
-            with open(tmp_file.name, 'w') as f:
-                f.write(content)
-            self.put(tmp_file.name, target_file)
-            tmp_file.close()
+            self.__write_large_file(content, target_files[0])
+            remaining_files = ' '.join(target_files[1:])
+            cmd = 'cat %s | tee %s' % (target_files[0], remaining_files)
+        self.run(cmd)
 
 
 class Job:

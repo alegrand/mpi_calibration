@@ -56,16 +56,18 @@ class TestNodes(Util):
         self.assertEqual(content, 'hello, world!\n')
         self.assert_run('', 'rm -f %s' % filename)
 
-    def test_write_file(self):
+    def test_write_files(self):
         frontend = Job.g5k_connection(self.site, self.user)
         self.node = Nodes([frontend], name='foo', working_dir='/home/%s' % self.user)
-        filename = 'test_fabfile'
         for size in [1, 10, 50, 100, 1000, 10000]:
-            content = ''.join(random.choices(string.ascii_lowercase + '\n\t ', k=size))
-            content_hash = hashlib.sha256(content.encode('ascii')).hexdigest()
-            self.node.write_file(content, filename)
-            self.assert_run('%s  %s' % (content_hash, filename), 'sha256sum %s' % filename)
-        self.assert_run('', 'rm -f %s' % filename)
+            for filenames in [['test_fabfile'], ['test_fabfile%d' % i for i in range(10)]]:
+                content = ''.join(random.choices(string.ascii_lowercase + '\n\t ', k=size))
+                content_hash = hashlib.sha256(content.encode('ascii')).hexdigest()
+                self.node.write_files(content, *filenames)
+                for filename in filenames:
+                    self.assert_run('%s  %s' % (content_hash, filename), 'sha256sum %s' % filename)
+                self.assert_run('', 'rm -f %s' % ' '.join(filenames))
+
 
 class TestJob(Util):
 
