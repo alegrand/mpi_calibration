@@ -164,12 +164,13 @@ class Job:
     @classmethod
     def oarsub(cls, frontend, constraint, walltime, nb_nodes, *,
                deploy=True, queue=None, immediate=True, script=None):
+        name = random.choice('☕🥐')
         date = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         constraint = '%s/nodes=%d,walltime=%s' % (
             constraint, nb_nodes, walltime)
         deploy_str = '-t deploy ' if deploy else '-t allow_classic_ssh'
         queue_str = '-q %s ' % queue if queue else ''
-        cmd = 'oarsub %s%s -l "%s"' % (queue_str, deploy_str, constraint)
+        cmd = 'oarsub -n "%s" %s%s -l "%s"' % (name, queue_str, deploy_str, constraint)
         if immediate:
             cmd += ' -r "%s"' % date
         if script:
