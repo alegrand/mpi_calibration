@@ -110,19 +110,19 @@ class TestJob(Util):
         self.assertEqual(result, expected_result)
 
     def test_job_deploy(self):
-        job = Job.oarsub_cluster(site=self.site,
-                                 username=self.user,
-                                 clusters=[self.cluster],
-                                 walltime=Time(minutes=15),
-                                 nb_nodes=self.nb_nodes,
-                                 deploy=True,
-                                 )
-        job.kadeploy().apt_install('hwloc')
-        nb = len(job.nodes.hyperthreads)
+        self.job = Job.oarsub_cluster(site=self.site,
+                                      username=self.user,
+                                      clusters=[self.cluster],
+                                      walltime=Time(minutes=15),
+                                      nb_nodes=self.nb_nodes,
+                                      deploy=True,
+                                      )
+        self.job.kadeploy().apt_install('hwloc')
+        nb = len(self.job.nodes.hyperthreads)
         self.assert_run(str(nb*2), 'grep processor /proc/cpuinfo | wc -l')
-        job.nodes.disable_hyperthreading()
+        self.job.nodes.disable_hyperthreading()
         self.assert_run(str(nb), 'grep processor /proc/cpuinfo | wc -l')
-        job.nodes.enable_hyperthreading()
+        self.job.nodes.enable_hyperthreading()
         self.assert_run(str(nb*2), 'grep processor /proc/cpuinfo | wc -l')
 
 
