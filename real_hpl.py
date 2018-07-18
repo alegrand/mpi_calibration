@@ -1,5 +1,6 @@
 import tempfile
 import os
+import fabric
 from fabfile import Job, Time, logger
 
 HPL_DIR = '/tmp/hpl-2.2'
@@ -15,6 +16,10 @@ def install_packages(job):
         'hwloc',
         'pciutils',
         'cmake',
+        'cpufrequtils',
+        'linux-cpupower',
+        'openmpi-bin',
+        'libopenmpi-dev',
     )
 
 
@@ -85,19 +90,11 @@ def setup_hpl(job, **kwargs):
     job.nodes.write_files(hpl_file, os.path.join(HPL_DIR, 'bin/Debian/HPL.dat'))
 
 
-def get_nb_cores(job):
-    nb_cores = list(job.nodes.run('grep processor /proc/cpuinfo | wc -l', hide_output=False).values())
-    nb_cores = [int(res.stdout) for res in nb_cores]
-    if len(set(nb_cores)) != 1:
-        logger.warning('Heterogeneous cluster, got different number of cores: %s' % list(sorted(nb_cores)))
-    return min(nb_cores) // 2
-
-
 def run_hpl(job):
-    nb_cores = get_nb_cores(job)
+    nb_cores = len(job.nodes.cores)
     nb_nodes = len(job.hostnames)
     hosts = ','.join(job.hostnames)
-    cmd = 'mpirun --timestamp-output -np %d -x OMP_NUM_THREADS=%d -H %s -x LD_LIBRARY_PATH=/tmp/lib ./xhpl' % (
+    cmd = 'mpirun --allow-run-as-root --bind-to none --timestamp-output -np %d -x OMP_NUM_THREADS=%d -H %s -x LD_LIBRARY_PATH=/tmp/lib ./xhpl' % (
         nb_nodes,
         nb_cores,
         hosts
@@ -119,17 +116,20 @@ def run(job, **kwargs):
     setup_hpl(job, **kwargs)
     output = run_hpl(job)
     time, gflops = parse_hpl(output.stdout)
-    print('%f Gflops' % gflops)
+    return gflops
 
 
-def estimate_peak(job, matrix_size=8192):
-    job.nodes.run('wget https://raw.githubusercontent.com/Ezibenroc/m2_internship_scripts/master/cblas_tests/dgemm_test.c')
-    nb_cores = get_nb_cores(job)
+def estimate_peak(job, matrix_size=8192, nb_cores=None):
+    nb_cores = nb_cores or len(job.nodes.cores)
     arg = ' '.join([str(matrix_size)]*6)
-    job.nodes.run('LD_LIBRARY_PATH=/tmp/lib gcc -DUSE_OPENBLAS ./dgemm_test.c -fopenmp -I /tmp/include \
-            /tmp/lib/libopenblas.so -O3 -o ./dgemm_test')
-    all_output = job.nodes.run('OMP_NUM_THREADS=%d LD_LIBRARY_PATH=/tmp/lib ./dgemm_test %s ' % (nb_cores, arg),
-                               hide_output=False)
+    cmd = 'OMP_NUM_THREADS=%d LD_LIBRARY_PATH=/tmp/lib ./dgemm_test %s ' % (nb_cores, arg)
+    try:
+        all_output = job.nodes.run(cmd, hide_output=False)
+    except fabric.exceptions.GroupException:  # not installed yet
+        job.nodes.run('wget https://raw.githubusercontent.com/Ezibenroc/m2_internship_scripts/master/cblas_tests/dgemm_test.c')
+        job.nodes.run('LD_LIBRARY_PATH=/tmp/lib gcc -DUSE_OPENBLAS ./dgemm_test.c -fopenmp -I /tmp/include \
+                /tmp/lib/libopenblas.so -O3 -o ./dgemm_test')
+        all_output = job.nodes.run(cmd, hide_output=False)
     gflops = []
     for output in all_output.values():
         time = float(output.stdout)
