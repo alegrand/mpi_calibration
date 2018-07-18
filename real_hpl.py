@@ -44,7 +44,16 @@ def install(job):
     install_hpl(job)
 
 
-def generate_hpl_file(*, size, block_size, proc_p, proc_q):
+def generate_hpl_file(*, size, block_size, proc_p, proc_q, pfact=0, rfact=0, bcast=0, depth=0, swap=2, mem_align=8):
+    assert 0 < block_size <= size
+    assert proc_p > 0
+    assert proc_q > 0
+    assert depth >= 0
+    assert pfact in (0, 1, 2)
+    assert rfact in (0, 1, 2)
+    assert bcast in (0, 1, 2, 3, 4, 5)
+    assert swap in (0, 1, 2)
+    assert mem_align % 4 == 0
     return '''\
 HPLinpack benchmark input file
 Innovative Computing Laboratory, University of Tennessee
@@ -60,28 +69,34 @@ HPL.out         output file name (if any)
 {proc_q}        Qs
 16.0            threshold
 1               # of panel fact
-0               PFACTs (0=left, 1=Crout, 2=Right)
+{pfact}         PFACTs (0=left, 1=Crout, 2=Right)
 1               # of recursive stopping criterium
 2               NBMINs (>= 1)
 1               # of panels in recursion
 2               NDIVs
 1               # of recursive panel fact.
-0               RFACTs (0=left, 1=Crout, 2=Right)
+{rfact}         RFACTs (0=left, 1=Crout, 2=Right)
 1               # of broadcast
-0               BCASTs (0=1rg,1=1rM,2=2rg,3=2rM,4=Lng,5=LnM)
+{bcast}         BCASTs (0=1rg,1=1rM,2=2rg,3=2rM,4=Lng,5=LnM)
 1               # of lookahead depth
-0               DEPTHs (>=0)
-2               SWAP (0=bin-exch,1=long,2=mix)
-64              swapping threshold
+{depth}         DEPTHs (>=0)
+{swap}          SWAP (0=bin-exch,1=long,2=mix)
+{block_size}    swapping threshold
 0               L1 in (0=transposed,1=no-transposed) form
 0               U  in (0=transposed,1=no-transposed) form
 1               Equilibration (0=no,1=yes)
-8               memory alignment in double (> 0)
+{mem_align}     memory alignment in double (> 0)
 '''.format(
             size=size,
             block_size=block_size,
             proc_p=proc_p,
             proc_q=proc_q,
+            pfact=pfact,
+            rfact=rfact,
+            bcast=bcast,
+            depth=depth,
+            swap=swap,
+            mem_align=mem_align,
     )
 
 
