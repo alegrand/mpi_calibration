@@ -4,6 +4,7 @@ import re
 import datetime
 import fabric
 import logging
+import collections
 import colorlog
 import time
 import os
@@ -191,6 +192,59 @@ class Nodes:
             assert pu.get('type') == 'PU'
             result.append(int(pu.get('os_index')))
         return result
+
+    @property
+    def frequency_information(self):
+        try:
+            return self.__frequency_information
+        except AttributeError:
+            freq = self.run_unique('cpufreq-info -l', hide_output=False).stdout
+            min_f, max_f = [int(f) for f in freq.split()]
+            governors = self.run_unique('cpufreq-info -g', hide_output=False).stdout.split()
+            tuple_cls = collections.namedtuple('frequency_information', ['governor', 'min_freq', 'max_freq'])
+            self.__frequency_information = tuple_cls(tuple(governors), min_f, max_f)
+            return self.__frequency_information
+
+    @property
+    def current_frequency_information(self):
+            info = self.run_unique('cpufreq-info -p', hide_output=False).stdout.split()
+            tuple_cls = collections.namedtuple('frequency_information', ['governor', 'min_freq', 'max_freq'])
+            return tuple_cls(info[2], int(info[0]), int(info[1]))
+
+    def set_frequency_information(self, governor=None, min_freq=None, max_freq=None):
+        if not governor and not min_freq and not max_freq:
+            raise ValueError('At least one of governor, min_freq and max_freq must be given.')
+        cmd = 'cpupower -c all frequency-set'
+        if governor:
+            all_gov = self.frequency_information.governor
+            if governor not in all_gov:
+                raise ValueError('Governor %s not in the allowed governors %s' % (governor, all_gov))
+            cmd += ' -g %s' % governor
+        hw_min = self.frequency_information.min_freq
+        hw_max = self.frequency_information.max_freq
+        hw_range = range(hw_min, hw_max+1)
+        if min_freq:
+            if min_freq not in hw_range:
+                raise ValueError('Minimum frequency %d not in the allowed frequency range [%d, %d]' % (min_freq,
+                                                                                                       hw_min, hw_max))
+            cmd += ' -d %d' % min_freq
+        if max_freq:
+            if max_freq not in hw_range:
+                raise ValueError('Maximum frequency %d not in the allowed frequency range [%d, %d]' % (max_freq,
+                                                                                                       hw_min, hw_max))
+            if max_freq < min_freq:
+                raise ValueError('Minimum frequency %d should be lower or equal to maximum frequency %d' % (min_freq,
+                                                                                                            max_freq))
+            cmd += ' -u %d' % max_freq
+        self.run(cmd)
+
+    def reset_frequency_information(self):
+        info = self.frequency_information
+        self.set_frequency_information('powersave', info.min_freq, info.max_freq)
+
+    def set_frequency_performance(self):
+        max_f = self.frequency_information.max_freq
+        self.set_frequency_information('performance', max_f, max_f)
 
 
 class Job:

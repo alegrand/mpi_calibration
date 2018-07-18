@@ -119,13 +119,37 @@ class TestJob(Util):
                                       nb_nodes=self.nb_nodes,
                                       deploy=True,
                                       )
-        self.job.kadeploy().apt_install('hwloc')
+        self.job.kadeploy().apt_install('hwloc', 'cpufrequtils', 'linux-cpupower')
         nb = len(self.job.nodes.hyperthreads)
         self.assert_run(str(nb*2), 'grep processor /proc/cpuinfo | wc -l')
         self.job.nodes.disable_hyperthreading()
         self.assert_run(str(nb), 'grep processor /proc/cpuinfo | wc -l')
         self.job.nodes.enable_hyperthreading()
         self.assert_run(str(nb*2), 'grep processor /proc/cpuinfo | wc -l')
+        freq_info = self.job.nodes.frequency_information
+        self.assertEqual(freq_info.governor, ('performance', 'powersave'))
+        self.assertEqual(freq_info.min_freq, 1200000)
+        self.assertEqual(freq_info.max_freq, 2800000)
+        for _ in range(2):
+            for governor in freq_info.governor:
+                min_freq = random.randint(freq_info.min_freq, freq_info.max_freq)
+                max_freq = random.randint(min_freq, freq_info.max_freq)
+                self.job.nodes.set_frequency_information(governor, min_freq, max_freq)
+                self.assertEqual(self.job.nodes.current_frequency_information, (governor, min_freq, max_freq))
+        self.job.nodes.reset_frequency_information()
+        self.assertEqual(self.job.nodes.current_frequency_information,
+                         ('powersave', freq_info.min_freq, freq_info.max_freq))
+        self.job.nodes.set_frequency_performance()
+        self.assertEqual(self.job.nodes.current_frequency_information,
+                         ('performance', freq_info.max_freq, freq_info.max_freq))
+        with self.assertRaises(ValueError):
+            self.job.nodes.set_frequency_information(governor='bla')
+        with self.assertRaises(ValueError):
+            self.job.nodes.set_frequency_information(min_freq=42)
+        with self.assertRaises(ValueError):
+            self.job.nodes.set_frequency_information(max_freq=42)
+        with self.assertRaises(ValueError):
+            self.job.nodes.set_frequency_information(min_freq=freq_info.min_freq + 100, max_freq=freq_info.min_freq)
 
 
 if __name__ == '__main__':
