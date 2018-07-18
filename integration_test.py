@@ -92,6 +92,8 @@ class TestJob(Util):
         result = job.frontend.run_unique('hostname -f', hide_output=False).stdout.strip()
         self.assertEqual(result, 'f%s.%s.grid5000.fr' % (self.site, self.site))
         hosts = job.hostnames
+        jobs = Job.get_jobs(self.site, self.user)
+        self.assertTrue(any(j.hostnames == hosts for j in jobs))
         self.assertEqual(len(set(hosts)), self.nb_nodes)
         for host in hosts:
             self.assertEqual(host[:len(self.cluster)], self.cluster)

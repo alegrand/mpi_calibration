@@ -205,7 +205,10 @@ class Job:
 
     def __del__(self):
         if self.auto_oardel:
-            self.oardel()
+            try:
+                self.oardel()
+            except Exception:
+                pass
 
     def oardel(self):
         self.frontend.run('oardel %d' % self.jobid)
@@ -217,6 +220,29 @@ class Job:
     def oarstat(self):
         result = self.frontend.run_unique('oarstat -fJ -j %d' % self.jobid, hide_output=False)
         return json.loads(result.stdout)[str(self.jobid)]
+
+    @classmethod
+    def _oarstat_user(cls, frontend):
+        try:
+            result = frontend.run_unique('oarstat -J -u', hide_output=False)
+        except fabric.exceptions.GroupException as e:  # no job
+            return {}
+        return json.loads(result.stdout)
+
+    @classmethod
+    def get_jobs(cls, site, username):
+        connection = cls.g5k_connection(site, username)
+        frontend = Nodes([connection], name='frontend-%s' % site, working_dir='/home/%s' % username)
+        stat = cls._oarstat_user(frontend)
+        jobs = []
+        for jobid, job_stat in stat.items():
+            if job_stat['state'] in ('Running', 'Waiting'):
+                job = int(jobid)
+                deploy = 'deploy' in job_stat['types']
+                jobs.append(cls(job, frontend, deploy=deploy))
+        if len(jobs) == 0:
+            raise ValueError('No jobs were found for user %s on site %s' % (username, site))
+        return jobs
 
     def __find_hostnames(self):
         # TODO Use oarstat -fJ
