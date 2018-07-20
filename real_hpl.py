@@ -119,20 +119,22 @@ def run_hpl(job):
 
 
 def parse_hpl(stdout):
-    if 'FAILED' in stdout or 'PASSED' not in stdout:
-        logger.warning('HPL test did not succeed.')
     lines = stdout.split('\n')
     for i, line in enumerate(lines):
         if 'Time' in line and 'Gflops' in line:
             result = lines[i + 2].split()
-            return float(result[-2]), float(result[-1])
+            result = float(result[-2]), float(result[-1])
+        if 'FAILED' in line:
+            residual = float(line.split()[-3])
+            logger.warning('HPL test failed with residual %.2e (should be < 16).' % residual)
+    return result
 
 
 def run(job, **kwargs):
     setup_hpl(job, **kwargs)
     output = run_hpl(job)
     time, gflops = parse_hpl(output.stdout)
-    return gflops
+    return time, gflops, output
 
 
 def estimate_peak(job, matrix_size=8192, nb_cores=None):
