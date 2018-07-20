@@ -20,6 +20,7 @@ def install_packages(job):
         'linux-cpupower',
         'openmpi-bin',
         'libopenmpi-dev',
+        'net-tools',
     )
 
 
