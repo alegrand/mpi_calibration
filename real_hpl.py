@@ -329,7 +329,7 @@ HPL_LIBS     = $(HPLlib) $(LAlib) $(MPlib) -lm
 #    *) call the Fortran 77 BLAS interface
 #    *) not display detailed timing information.
 #
-HPL_OPTS     = -DHPL_CALL_CBLAS -DHPL_NO_MPI_DATATYPE
+HPL_OPTS     = -DHPL_CALL_CBLAS -DHPL_NO_MPI_DATATYPE -DHPL_USE_GETTIMEOFDAY
 #
 # ----------------------------------------------------------------------
 #
